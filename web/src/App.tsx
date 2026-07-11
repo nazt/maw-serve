@@ -2,14 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Fabric } from "./canvas/Fabric";
 import { useCanvas } from "./canvas/useCanvas";
+import {
+  imageElementProps,
+  type BoardItem,
+  type NoteBoardItem,
+} from "./board/boardItems";
 import OracleTileContent from "./fleet/OracleTileContent";
 import StatusBar, { summarizeFleet } from "./fleet/StatusBar";
-import Toolbar from "./fleet/Toolbar";
-import {
-  useFleet,
-  type FleetTileItem,
-  type NoteTileItem,
-} from "./fleet/useFleet";
+import { useFleet, type FleetTileItem } from "./fleet/useFleet";
 import Tile from "./tiles/Tile";
 
 const clockFormatter = new Intl.DateTimeFormat(undefined, {
@@ -34,7 +34,7 @@ function useClock(): Date {
 }
 
 interface NoteTileContentProps {
-  item: NoteTileItem;
+  item: NoteBoardItem;
   onChange: (id: string, text: string) => void;
 }
 
@@ -48,6 +48,107 @@ function NoteTileContent({ item, onChange }: NoteTileContentProps) {
         value={item.data.text}
         onChange={(event) => onChange(item.id, event.target.value)}
       />
+    </div>
+  );
+}
+
+interface BoardItemContentProps {
+  item: BoardItem;
+  onNoteChange: (id: string, text: string) => void;
+}
+
+function BoardItemContent({ item, onNoteChange }: BoardItemContentProps) {
+  if (item.kind === "note") {
+    return <NoteTileContent item={item} onChange={onNoteChange} />;
+  }
+
+  return (
+    <div className="h-full overflow-hidden rounded-md border border-[var(--line)] bg-[var(--surface)] p-1.5">
+      <img
+        {...imageElementProps(item)}
+        className="h-full w-full select-none rounded-sm object-contain"
+      />
+    </div>
+  );
+}
+
+const toolbarButtonClass = [
+  "rounded-md",
+  "border",
+  "border-[var(--line)]",
+  "bg-[var(--surface)]",
+  "px-2.5",
+  "py-1.5",
+  "text-xs",
+  "font-semibold",
+  "text-[var(--ink)]",
+  "transition-colors",
+  "duration-150",
+  "hover:bg-[var(--surface-2)]",
+  "focus-visible:outline",
+  "focus-visible:outline-2",
+  "focus-visible:outline-offset-2",
+  "focus-visible:outline-[var(--idle)]",
+  "disabled:cursor-not-allowed",
+  "disabled:opacity-50",
+].join(" ");
+
+interface BoardToolbarProps {
+  zoom: number;
+  onAddNote: () => void;
+  onAddImage: () => Promise<void>;
+  onFit: () => void;
+  disabled: boolean;
+  addingImage: boolean;
+}
+
+function BoardToolbar({
+  zoom,
+  onAddNote,
+  onAddImage,
+  onFit,
+  disabled,
+  addingImage,
+}: BoardToolbarProps) {
+  const zoomPercent = `${Math.round(Math.min(2, Math.max(0.35, zoom)) * 100)}%`;
+
+  return (
+    <div
+      className="fixed bottom-11 left-1/2 z-40 flex -translate-x-1/2 items-center gap-1.5 rounded-lg bg-[var(--surface)] p-1.5 shadow-[0_0_0_1px_var(--line)]"
+      role="toolbar"
+      aria-label="Board controls"
+    >
+      <button
+        type="button"
+        className={toolbarButtonClass}
+        onClick={onAddNote}
+        disabled={disabled}
+      >
+        Add note
+      </button>
+      <button
+        type="button"
+        className={toolbarButtonClass}
+        onClick={() => void onAddImage()}
+        disabled={disabled || addingImage}
+      >
+        {addingImage ? "Adding image…" : "Add image"}
+      </button>
+      <button
+        type="button"
+        className={toolbarButtonClass}
+        onClick={onFit}
+        disabled={disabled}
+      >
+        Fit
+      </button>
+      <output
+        className="min-w-12 px-1 text-center font-mono text-xs tabular-nums text-[var(--idle)]"
+        aria-label="Canvas zoom"
+        aria-live="polite"
+      >
+        {zoomPercent}
+      </output>
     </div>
   );
 }
@@ -82,6 +183,10 @@ function tileClassName(item: FleetTileItem): string {
     return "rounded-md bg-[oklch(0.29_0.055_75)]";
   }
 
+  if (item.kind === "image") {
+    return "rounded-md bg-[var(--surface)]";
+  }
+
   return [
     "rounded-md",
     "bg-[var(--surface)]",
@@ -98,10 +203,12 @@ export default function App() {
     loading,
     error,
     addNote,
+    addImage,
     updateTile,
     updateNote,
   } = useFleet();
   const now = useClock();
+  const [addingImage, setAddingImage] = useState(false);
   const initialFitComplete = useRef(false);
   const totals = useMemo(() => summarizeFleet(tiles, usage), [tiles, usage]);
   const hasOracleTiles = useMemo(
@@ -119,21 +226,29 @@ export default function App() {
     return () => window.cancelAnimationFrame(frame);
   }, [canvas, hasOracleTiles, tiles]);
 
-  const addNoteAtViewportCenter = useCallback(() => {
+  const viewportCenter = useCallback(() => {
     const fabric = canvas.fabricRef.current;
-    if (!fabric) {
-      addNote(canvas.center);
-      return;
-    }
+    if (!fabric) return canvas.center;
 
     const bounds = fabric.getBoundingClientRect();
-    addNote(
-      canvas.screenToWorld({
-        clientX: bounds.left + bounds.width / 2,
-        clientY: bounds.top + bounds.height / 2,
-      }),
-    );
-  }, [addNote, canvas]);
+    return canvas.screenToWorld({
+      clientX: bounds.left + bounds.width / 2,
+      clientY: bounds.top + bounds.height / 2,
+    });
+  }, [canvas]);
+
+  const addNoteAtViewportCenter = useCallback(() => {
+    addNote({ center: viewportCenter() });
+  }, [addNote, viewportCenter]);
+
+  const addImageAtViewportCenter = useCallback(async () => {
+    setAddingImage(true);
+    try {
+      await addImage({ center: viewportCenter() });
+    } finally {
+      setAddingImage(false);
+    }
+  }, [addImage, viewportCenter]);
 
   return (
     <div className="h-dvh w-screen overflow-hidden bg-[var(--bg)] text-[var(--ink)]">
@@ -167,17 +282,19 @@ export default function App() {
             {item.kind === "oracle" ? (
               <OracleTileContent item={item} />
             ) : (
-              <NoteTileContent item={item} onChange={updateNote} />
+              <BoardItemContent item={item} onNoteChange={updateNote} />
             )}
           </Tile>
         ))}
       </Fabric>
 
-      <Toolbar
+      <BoardToolbar
         zoom={canvas.zoom}
         onAddNote={addNoteAtViewportCenter}
+        onAddImage={addImageAtViewportCenter}
         onFit={canvas.fit}
         disabled={loading && tiles.length === 0}
+        addingImage={addingImage}
       />
       <StatusBar items={tiles} usage={usage} error={error} />
 
