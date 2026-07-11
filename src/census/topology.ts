@@ -39,10 +39,12 @@ export function censusWireToTopology(wire: CensusWireV1): StoaFleetTopology {
   return {
     spaces: wire.displays.flatMap((display, displayIndex) =>
       display.spaces.map((space, spaceIndex) => ({
-        // Wire display/space names are human labels, so Stoa uses deterministic
-        // array positions as numeric join coordinates for display-census later.
-        display: displayIndex,
-        space: spaceIndex,
+        // Names are the stable census identities used for labels and joins;
+        // indexes are retained only as optional ordering hints.
+        display: display.name,
+        space: space.name,
+        displayIndex,
+        spaceIndex,
         oracles: space.oracles.map(wireOracleToTopologyOracle),
       })),
     ),

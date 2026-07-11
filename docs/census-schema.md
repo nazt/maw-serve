@@ -6,13 +6,16 @@ schema; future display-census fields remain optional and nullable.
 
 ## Required-now mapping from final `maw census --json` (#382)
 
-The confirmed #382 census shape is grouped by display and space. Stoa keeps that
-shape directly as required `StoaFleetTopology.spaces`:
+The confirmed #382 census wire shape is display-nested and uses names as stable
+identity. Stoa flattens it into required `StoaFleetTopology.spaces`, carrying the
+wire names as primary keys and optional indexes only as ordering hints:
 
 | #382 / maw census concept | Stoa field | Required today |
 | --- | --- | --- |
-| display index | `spaces[].display` | yes |
-| space index | `spaces[].space` | yes |
+| display name, e.g. `DELL U2719DC` | `spaces[].display` | yes |
+| space name, e.g. `1:1:0:0:1:1` | `spaces[].space` | yes |
+| display array position | `spaces[].displayIndex` | optional |
+| space array position within display | `spaces[].spaceIndex` | optional |
 | oracle rows on that space | `spaces[].oracles` | yes |
 | oracle handle | `spaces[].oracles[].oracle` | yes |
 | session id/name | `spaces[].oracles[].session` | optional |
@@ -24,7 +27,9 @@ shape directly as required `StoaFleetTopology.spaces`:
 | pin state for this location | `spaces[].oracles[].pinned` | yes |
 
 The old flat `oracles` array is intentionally gone. Consumers should walk
-`spaces[]` first, then each space's `oracles[]`.
+`spaces[]` first, then each space's `oracles[]`. Consumers must treat
+`display`/`space` names as identity and `displayIndex`/`spaceIndex` as reorderable
+presentation hints.
 
 ## Pins from window-arranger
 
@@ -62,10 +67,9 @@ opaque value.
 
 ## Display-census join design
 
-The census source is grouped by `(display, space)`, and display-census enrichment
-also carries `(display, space)` or display indexes on `fleet`, `windows`,
-`displayCensusSpaces`, and `displays`. The topology/reflection tile can therefore
-join the required census rows to optional pixel data by `(display, space)`:
-census supplies oracle truth, display-census supplies visibility/focus and global
-pixel frames, and consumers keep using this same superset type as enrichment is
-added.
+The census source now provides stable `(display, space)` string identities from
+the wire names. The reflection tile should use those names for monitor labels and
+join keys; positional indexes can drift and are only hints for ordering. Future
+display-census enrichment should resolve its source display/space components onto
+these canonical names before rendering, while preserving pixel frames for the
+window layout layer.

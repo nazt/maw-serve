@@ -2,10 +2,10 @@
   "schema": "maw.census.v1",
   "displays": [
     {
-      "name": "main",
+      "name": "DELL U2719DC",
       "spaces": [
         {
-          "name": "work",
+          "name": "1:1:0:0:1:1",
           "oracles": [
             {
               "oracle": "m5",
@@ -20,7 +20,7 @@
           ]
         },
         {
-          "name": "review",
+          "name": "1:1:0:0:1:2",
           "oracles": [
             {
               "oracle": "agora",

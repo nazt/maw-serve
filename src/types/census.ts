@@ -37,8 +37,18 @@ export type StoaFleetTopology = {
 
 /** Required-now census space group from final `maw census --json` #382. */
 export type StoaCensusSpace = {
-  display: number;
-  space: number;
+  /** Stable display identity from the census wire `displays[].name`. */
+  display: string;
+
+  /** Stable space identity from the census wire `displays[].spaces[].name`. */
+  space: string;
+
+  /** Optional positional hint for ordering, not identity or joins. */
+  displayIndex?: number;
+
+  /** Optional positional hint for ordering, not identity or joins. */
+  spaceIndex?: number;
+
   oracles: StoaCensusOracle[];
 };
 

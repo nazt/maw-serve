@@ -14,10 +14,14 @@ test("censusWireToTopology adapts maw.census.v1 wire shape", async () => {
   const body = censusWireToTopology(await loadWireFixture());
 
   expect(body.spaces).toHaveLength(2);
-  expect(body.spaces[0].display).toBe(0);
-  expect(body.spaces[0].space).toBe(0);
-  expect(body.spaces[1].display).toBe(0);
-  expect(body.spaces[1].space).toBe(1);
+  expect(body.spaces[0].display).toBe("DELL U2719DC");
+  expect(body.spaces[0].space).toBe("1:1:0:0:1:1");
+  expect(body.spaces[0].displayIndex).toBe(0);
+  expect(body.spaces[0].spaceIndex).toBe(0);
+  expect(body.spaces[1].display).toBe("DELL U2719DC");
+  expect(body.spaces[1].space).toBe("1:1:0:0:1:2");
+  expect(body.spaces[1].displayIndex).toBe(0);
+  expect(body.spaces[1].spaceIndex).toBe(1);
 
   const oracle = body.spaces[0].oracles[0];
   expect(oracle.oracle).toBe("m5");
@@ -48,8 +52,8 @@ test("GET /api/agora/census returns fixture-backed StoaFleetTopology", async () 
 
     const body = (await res.json()) as StoaFleetTopology;
     expect(body.spaces.length).toBeGreaterThan(0);
-    expect(typeof body.spaces[0].display).toBe("number");
-    expect(typeof body.spaces[0].space).toBe("number");
+    expect(body.spaces[0].display).toBe("DELL U2719DC");
+    expect(body.spaces[0].space).toBe("1:1:0:0:1:1");
     expect(body.spaces[0].oracles[0].model_tier).toBe("frontier");
     expectDisplayCensusFieldsNull(body);
   } finally {
