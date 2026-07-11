@@ -1,0 +1,678 @@
+@property --usage-angle {
+  syntax: "<angle>";
+  inherits: true;
+  initial-value: 0deg;
+}
+
+@property --usage-pct {
+  syntax: "<percentage>";
+  inherits: true;
+  initial-value: 0%;
+}
+
+@property --heat-angle {
+  syntax: "<angle>";
+  inherits: true;
+  initial-value: 0deg;
+}
+
+@property --heat {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0;
+}
+
+:root {
+  color-scheme: dark;
+
+  /* Fleet Observatory: committed deep-space palette */
+  --bg: oklch(0.15 0.02 220);
+  --surface: oklch(0.19 0.02 220);
+  --surface-2: oklch(0.23 0.02 220);
+  --ink: oklch(0.96 0.01 220);
+  --ink-dim: oklch(0.72 0.02 220);
+  --line: oklch(0.3 0.02 220);
+
+  /* Oracle state */
+  --active: oklch(0.85 0.19 155);
+  --idle: oklch(0.8 0.1 210);
+  --stale: oklch(0.55 0.03 230);
+  --pinned: oklch(0.82 0.16 75);
+  --error: oklch(0.68 0.2 25);
+
+  /* Five-hour usage heat */
+  --usage-cool: oklch(0.85 0.19 155);
+  --usage-warm: oklch(0.82 0.16 75);
+  --usage-hot: oklch(0.68 0.2 25);
+  --usage-track: oklch(0.3 0.02 220 / 0.72);
+
+  /* Bounded state glows keep a 75-node field readable, not noisy. */
+  --active-glow: oklch(0.85 0.19 155 / 0.3);
+  --idle-glow: oklch(0.8 0.1 210 / 0.2);
+  --stale-glow: oklch(0.55 0.03 230 / 0.1);
+  --pinned-glow: oklch(0.82 0.16 75 / 0.3);
+  --error-glow: oklch(0.68 0.2 25 / 0.32);
+
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco,
+    Consolas, "Liberation Mono", monospace;
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --z-sticky: 10;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 20rem;
+  min-height: 100%;
+  background: var(--bg);
+}
+
+body {
+  min-height: 100vh;
+  min-height: 100dvh;
+  margin: 0;
+  padding: 0 0 4.25rem;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.5;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+select,
+textarea {
+  color: inherit;
+  font: inherit;
+}
+
+a {
+  color: var(--idle);
+  text-underline-offset: 0.18em;
+}
+
+:focus-visible {
+  outline: 2px solid var(--idle);
+  outline-offset: 3px;
+}
+
+::selection {
+  background: oklch(0.8 0.1 210 / 0.24);
+  color: var(--ink);
+}
+
+/* Shell support: solid surfaces only, never decorative glass. */
+.app-header,
+.masthead,
+body > header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem clamp(1rem, 3vw, 2.5rem);
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+}
+
+.app-header h1,
+.masthead h1,
+body > header h1 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 750;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+
+.clock,
+.live-clock,
+[data-live-clock] {
+  color: var(--ink-dim);
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+main,
+.board {
+  width: min(100%, 110rem);
+  margin-inline: auto;
+  padding: clamp(1rem, 2.5vw, 2.5rem);
+}
+
+.regions,
+.region-grid,
+#regions,
+[data-region-container] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: clamp(1.25rem, 2.5vw, 2.25rem);
+}
+
+/* Every display owns a full-width horizontal band in the observatory. */
+.region {
+  width: 100%;
+  min-width: 0;
+  padding-block: 0.75rem 1.25rem;
+  border-top: 1px solid var(--line);
+}
+
+.region-header,
+.region__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  margin-bottom: 1rem;
+}
+
+.region h2,
+.region-name,
+.region__name {
+  margin: 0;
+  color: var(--ink);
+  font-size: 1.0625rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+
+.region-size,
+.region__size,
+.display-size {
+  color: var(--ink-dim);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.spaces,
+.space-grid,
+.region__spaces {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem;
+}
+
+/* A space is a cluster, not a nested card. Its top rule is the boundary. */
+.space {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  min-width: 0;
+  gap: 0.4rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid oklch(0.3 0.02 220 / 0.72);
+}
+
+.space-header,
+.space__header,
+.space > h3,
+.space-name,
+.space__name {
+  grid-column: 1 / -1;
+}
+
+.space-header,
+.space__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.space h3,
+.space-name,
+.space__name {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--ink-dim);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nodes,
+.node-grid,
+.oracle-grid,
+.space__nodes {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 0.4rem;
+}
+
+/* The oracle node is the visual star: dense, legible, and status-led. */
+.node {
+  --node-status: var(--stale);
+  --node-glow: var(--stale-glow);
+  --heat-color: var(--usage-cool);
+
+  position: relative;
+  isolation: isolate;
+  display: block;
+  min-width: 0;
+  min-height: 3.5rem;
+  padding: 0.4rem 0.5rem;
+  overflow: hidden;
+  border: 1px solid var(--node-status);
+  border-radius: 6px;
+  background: var(--surface);
+  box-shadow: 0 0 7px 0 var(--node-glow);
+  animation: node-enter 460ms var(--ease-out-expo) backwards;
+  transition:
+    background-color 180ms var(--ease-out-expo),
+    border-color 180ms var(--ease-out-expo),
+    box-shadow 180ms var(--ease-out-expo),
+    filter 180ms var(--ease-out-expo),
+    opacity 180ms var(--ease-out-expo),
+    transform 180ms var(--ease-out-expo);
+}
+
+.node:hover {
+  background: var(--surface-2);
+  box-shadow: 0 0 10px 0 var(--node-glow);
+  transform: translateY(-1px);
+}
+
+.node:focus-within {
+  outline: 2px solid var(--idle);
+  outline-offset: 2px;
+}
+
+.node[data-status="active"],
+.node.is-active,
+.node.active {
+  --node-status: var(--active);
+  --node-glow: var(--active-glow);
+  animation:
+    node-enter 460ms var(--ease-out-expo) backwards,
+    active-breathe 3s var(--ease-out-expo) 460ms infinite;
+}
+
+.node[data-status="idle"],
+.node.is-idle,
+.node.idle {
+  --node-status: var(--idle);
+  --node-glow: var(--idle-glow);
+}
+
+.node[data-status="stale"],
+.node.is-stale,
+.node.stale {
+  --node-status: var(--stale);
+  --node-glow: var(--stale-glow);
+  opacity: 0.7;
+  filter: saturate(0.45);
+}
+
+.node[data-status="error"],
+.node[data-status="revoked"],
+.node.is-error,
+.node.error,
+.node.revoked {
+  --node-status: var(--error);
+  --node-glow: var(--error-glow);
+}
+
+.node[data-status="pinned"],
+.node.is-pinned,
+.node.pinned {
+  --node-status: var(--pinned);
+  --node-glow: var(--pinned-glow);
+  --heat-color: var(--pinned);
+}
+
+.node.stale:hover,
+.node.is-stale:hover,
+.node[data-status="stale"]:hover {
+  opacity: 0.82;
+}
+
+.node-content {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  min-width: 0;
+  gap: 0.15rem;
+}
+
+.node-heading {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  min-width: 0;
+  gap: 0.375rem;
+}
+
+.node-details {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  min-width: 0;
+  gap: 0.375rem;
+}
+
+.node-name,
+.node__name,
+.oracle-name,
+.oracle {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  font-weight: 750;
+  letter-spacing: -0.015em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-tier,
+.model-chip,
+.node__tier {
+  max-width: 6.75rem;
+  padding: 0.1rem 0.35rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--ink-dim);
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  font-weight: 650;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.annotation,
+.node-annotation,
+.node__annotation {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--ink-dim);
+  font-size: 0.75rem;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.idle-sec,
+.idle-time,
+.idle-label,
+.node__idle {
+  color: var(--ink-dim);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.node[data-status="active"] :is(.idle-sec, .idle-time, .node__idle),
+.node.is-active :is(.idle-sec, .idle-time, .node__idle),
+.node.active :is(.idle-sec, .idle-time, .node__idle) {
+  color: var(--active);
+}
+
+.status-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  margin: 0;
+  border-radius: 50%;
+  background: var(--node-status, var(--stale));
+  color: var(--node-status, var(--stale));
+  box-shadow:
+    0 0 0 2px oklch(0.55 0.03 230 / 0.14),
+    0 0 7px currentColor;
+}
+
+.status-dot[data-status="active"],
+.status-dot.active,
+.status-dot.is-active {
+  --node-status: var(--active);
+}
+
+.status-dot[data-status="idle"],
+.status-dot.idle,
+.status-dot.is-idle {
+  --node-status: var(--idle);
+}
+
+.status-dot[data-status="stale"],
+.status-dot.stale,
+.status-dot.is-stale {
+  --node-status: var(--stale);
+}
+
+.status-dot[data-status="error"],
+.status-dot[data-status="revoked"],
+.status-dot.error,
+.status-dot.revoked,
+.status-dot.is-error {
+  --node-status: var(--error);
+}
+
+.status-dot[data-status="pinned"],
+.status-dot.pinned,
+.status-dot.is-pinned {
+  --node-status: var(--pinned);
+}
+
+/* Usage is a perimeter signal, leaving node content untouched. */
+.heat-ring {
+  --heat-angle: calc(var(--heat) * 3.6deg);
+  --ring-progress: var(--heat-angle);
+
+  position: absolute;
+  z-index: 1;
+  inset: 2px;
+  padding: 2px;
+  border-radius: 4px;
+  pointer-events: none;
+  background: conic-gradient(
+    from -90deg,
+    var(--heat-color) 0 var(--ring-progress),
+    var(--usage-track) var(--ring-progress) 1turn
+  );
+  -webkit-mask:
+    linear-gradient(oklch(0 0 0) 0 0) content-box,
+    linear-gradient(oklch(0 0 0) 0 0);
+  mask:
+    linear-gradient(oklch(0 0 0) 0 0) content-box,
+    linear-gradient(oklch(0 0 0) 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  transition:
+    --heat 700ms var(--ease-out-expo),
+    --heat-angle 700ms var(--ease-out-expo),
+    --usage-angle 700ms var(--ease-out-expo),
+    --usage-pct 700ms var(--ease-out-expo),
+    background-color 180ms var(--ease-out-expo);
+}
+
+.node[data-heat="warm"],
+.node[data-usage-level="warm"],
+.node.heat-warm {
+  --heat-color: var(--usage-warm);
+}
+
+.node[data-heat="hot"],
+.node[data-usage-level="hot"],
+.node.heat-hot {
+  --heat-color: var(--usage-hot);
+}
+
+.node[data-pinned="true"],
+.node.is-pinned,
+.node.pinned {
+  --heat-color: var(--pinned);
+}
+
+.node[data-pinned="true"] .heat-ring,
+.node.is-pinned .heat-ring,
+.node.pinned .heat-ring {
+  filter: drop-shadow(0 0 4px oklch(0.82 0.16 75 / 0.4));
+}
+
+/* Fleet totals remain visible without obscuring the topology. */
+.statusbar,
+.status-bar,
+#statusbar {
+  position: fixed;
+  z-index: var(--z-sticky);
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem clamp(0.75rem, 2vw, 1.5rem);
+  min-height: 3.5rem;
+  padding: 0.7rem clamp(1rem, 3vw, 2.5rem);
+  border-top: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--ink-dim);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+}
+
+.statusbar > *,
+.status-bar > *,
+#statusbar > * {
+  min-width: 0;
+}
+
+.statusbar strong,
+.status-bar strong,
+#statusbar strong,
+.statusbar .value,
+.status-bar .value,
+#statusbar .value {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.statusbar [data-status="active"],
+.statusbar .active,
+.status-bar [data-status="active"],
+#statusbar [data-status="active"] {
+  color: var(--active);
+}
+
+.statusbar [data-status="idle"],
+.statusbar .idle,
+.status-bar [data-status="idle"],
+#statusbar [data-status="idle"] {
+  color: var(--idle);
+}
+
+.statusbar [data-status="stale"],
+.statusbar .stale,
+.status-bar [data-status="stale"],
+#statusbar [data-status="stale"] {
+  color: var(--stale);
+}
+
+.statusbar [data-status="error"],
+.statusbar .error,
+.status-bar [data-status="error"],
+#statusbar [data-status="error"] {
+  color: var(--error);
+}
+
+.loading,
+.empty-state,
+.error-state,
+[role="status"] {
+  max-width: 70ch;
+  color: var(--ink-dim);
+}
+
+.error-state,
+[role="alert"] {
+  color: var(--error);
+}
+
+@keyframes node-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.975);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes active-breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 5px 0 oklch(0.85 0.19 155 / 0.18);
+  }
+
+  50% {
+    box-shadow: 0 0 12px 1px oklch(0.85 0.19 155 / 0.38);
+  }
+}
+
+@media (max-width: 42rem) {
+  body {
+    padding-bottom: 5.75rem;
+  }
+
+  .app-header,
+  .masthead,
+  body > header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .statusbar,
+  .status-bar,
+  #statusbar {
+    align-items: baseline;
+    flex-wrap: wrap;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .node,
+  .node[data-status="active"],
+  .node.is-active,
+  .node.active {
+    animation: none;
+    transform: none;
+  }
+
+  .heat-ring {
+    transition: none;
+  }
+}
