@@ -1,0 +1,33 @@
+{
+  "updated_at": "2026-07-11T09:00:00.000Z",
+  "window_h": 5,
+  "hosts": [
+    {
+      "machine": "atlas",
+      "oracles": 2,
+      "tokens": 12000,
+      "messages": 34,
+      "burn_per_hr": 2400,
+      "resets_at": "2026-07-11T14:00:00.000Z"
+    }
+  ],
+  "accounts": [
+    {
+      "account": "acct-redacted-1",
+      "rate_5h_pct": 42.5,
+      "rate_5h_resets_at": "2026-07-11T14:00:00.000Z",
+      "rate_7d_pct": 8.1,
+      "rate_7d_resets_at": "2026-07-18T09:00:00.000Z"
+    }
+  ],
+  "oracles": [
+    {
+      "oracle": "oracle-1",
+      "model": "model-a",
+      "account": "acct-redacted-1",
+      "machine": "atlas",
+      "rate_5h_pct": 51.2,
+      "rate_7d_pct": 9.8
+    }
+  ]
+}
