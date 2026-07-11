@@ -156,6 +156,8 @@ const toolbarButtonClass = [
 
 interface BoardToolbarProps {
   zoom: number;
+  onJumpToActive: () => void;
+  jumpDisabled: boolean;
   onAddNote: () => void;
   onAddImage: () => Promise<void>;
   onFit: () => void;
@@ -166,6 +168,8 @@ interface BoardToolbarProps {
 
 function BoardToolbar({
   zoom,
+  onJumpToActive,
+  jumpDisabled,
   onAddNote,
   onAddImage,
   onFit,
@@ -181,6 +185,17 @@ function BoardToolbar({
       role="toolbar"
       aria-label="Board controls"
     >
+      <button
+        type="button"
+        className={`${toolbarButtonClass} flex items-center gap-1.5`}
+        onClick={onJumpToActive}
+        disabled={jumpDisabled}
+        aria-keyshortcuts="J"
+        title="Cycle recently active oracles (J)"
+      >
+        <span>Jump to active</span>
+        <kbd className="font-mono text-[10px] font-medium text-[var(--idle)]">J</kbd>
+      </button>
       <button
         type="button"
         className={toolbarButtonClass}
@@ -271,7 +286,7 @@ function tileClassName(item: AppTileItem): string {
 
 function finiteIdle(value: number | null | undefined): number {
   const idle = Number(value);
-  return Number.isFinite(idle) ? idle : Number.POSITIVE_INFINITY;
+  return Number.isFinite(idle) && idle >= 0 ? idle : Number.POSITIVE_INFINITY;
 }
 
 function idleDetail(value: number | null): string {
@@ -280,6 +295,12 @@ function idleDetail(value: number | null): string {
   if (value < 60) return `${Math.floor(value)}s`;
   if (value < 3_600) return `${Math.floor(value / 60)}m`;
   return `${Math.floor(value / 3_600)}h`;
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return target.isContentEditable ||
+    ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName);
 }
 
 function terminalPane(
@@ -337,6 +358,7 @@ export default function App() {
   const oracleClickTimerRef = useRef<number | null>(null);
   const pendingOracleIdRef = useRef<string | null>(null);
   const oraclePressRef = useRef<OraclePress | null>(null);
+  const jumpCursorRef = useRef<string | null>(null);
   const [fleetGeometry, setFleetGeometry] = useState<Record<string, PersistedGeometry>>(
     restoredState.fleet,
   );
@@ -350,6 +372,17 @@ export default function App() {
   const positionedFleetTiles = useMemo<OracleTileItem[]>(() => (
     fleetTiles.map((item) => ({ ...item, ...fleetGeometry[item.id] }))
   ), [fleetGeometry, fleetTiles]);
+  const jumpTargets = useMemo<OracleTileItem[]>(() => {
+    const byActivity = (left: OracleTileItem, right: OracleTileItem) => (
+      finiteIdle(left.data.idleSec) - finiteIdle(right.data.idleSec) ||
+      left.id.localeCompare(right.id)
+    );
+    const active = positionedFleetTiles
+      .filter((item) => item.data.status === "active")
+      .sort(byActivity);
+    if (active.length > 0) return active;
+    return [...positionedFleetTiles].sort(byActivity).slice(0, 1);
+  }, [positionedFleetTiles]);
   const statusTiles = useMemo<FleetTileItem[]>(
     () => [...positionedFleetTiles, ...boardItems],
     [boardItems, positionedFleetTiles],
@@ -486,12 +519,44 @@ export default function App() {
     canvas.focusOn({ x: oracle.x, y: oracle.y, w: oracle.w, h: oracle.h });
   }, [canvas]);
 
+  const jumpToActive = useCallback(() => {
+    cancelOracleClick();
+    if (jumpTargets.length === 0) return;
+    const cursorIndex = jumpTargets.findIndex(
+      (item) => item.id === jumpCursorRef.current,
+    );
+    const next = jumpTargets[(cursorIndex + 1) % jumpTargets.length];
+    jumpCursorRef.current = next.id;
+    focusOracle(next);
+  }, [cancelOracleClick, focusOracle, jumpTargets]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.key.toLowerCase() !== "j" ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.repeat ||
+        isEditableTarget(event.target)
+      ) {
+        return;
+      }
+      event.preventDefault();
+      jumpToActive();
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [jumpToActive]);
+
   const handleOracleClick = useCallback((oracle: OracleTileItem) => {
     cancelOracleClick();
     pendingOracleIdRef.current = oracle.id;
     oracleClickTimerRef.current = window.setTimeout(() => {
       oracleClickTimerRef.current = null;
       pendingOracleIdRef.current = null;
+      jumpCursorRef.current = null;
       focusOracle(oracle);
     }, ORACLE_SINGLE_CLICK_MS);
   }, [cancelOracleClick, focusOracle]);
@@ -566,6 +631,7 @@ export default function App() {
     setBoardItems([]);
     setTerminalTiles([]);
     setSelectedOracleId(null);
+    jumpCursorRef.current = null;
     setLayoutEpoch((current) => current + 1);
     setPersistenceWarning(null);
     initialFitComplete.current = true;
@@ -595,7 +661,9 @@ export default function App() {
         aria-label="Interactive fleet board"
         aria-busy={loading}
         onClick={(event) => {
-          if (event.target === event.currentTarget) setSelectedOracleId(null);
+          if (event.target !== event.currentTarget) return;
+          jumpCursorRef.current = null;
+          setSelectedOracleId(null);
         }}
       >
         <BoardState loading={loading} error={error} hasTiles={hasOracleTiles} />
@@ -701,6 +769,8 @@ export default function App() {
 
       <BoardToolbar
         zoom={canvas.zoom}
+        onJumpToActive={jumpToActive}
+        jumpDisabled={jumpTargets.length === 0}
         onAddNote={addNoteAtViewportCenter}
         onAddImage={addImageAtViewportCenter}
         onFit={() => canvas.fit(allTiles)}
