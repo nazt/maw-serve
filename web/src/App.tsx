@@ -23,6 +23,7 @@ import OracleTileContent from "./fleet/OracleTileContent";
 import StatusBar, { summarizeFleet } from "./fleet/StatusBar";
 import {
   normalizeOracleHandle,
+  summarizeAttention,
   useFleet,
   type CensusOracle,
   type CensusPayload,
@@ -158,6 +159,9 @@ interface BoardToolbarProps {
   zoom: number;
   onJumpToActive: () => void;
   jumpDisabled: boolean;
+  onJumpToAttention: () => void;
+  attentionCount: number;
+  attentionCritical: boolean;
   onAddNote: () => void;
   onAddImage: () => Promise<void>;
   onFit: () => void;
@@ -170,6 +174,9 @@ function BoardToolbar({
   zoom,
   onJumpToActive,
   jumpDisabled,
+  onJumpToAttention,
+  attentionCount,
+  attentionCritical,
   onAddNote,
   onAddImage,
   onFit,
@@ -195,6 +202,26 @@ function BoardToolbar({
       >
         <span>Jump to active</span>
         <kbd className="font-mono text-[10px] font-medium text-[var(--idle)]">J</kbd>
+      </button>
+      <button
+        type="button"
+        className={`${toolbarButtonClass} flex items-center gap-1.5 ${
+          attentionCritical
+            ? "border-[var(--error)] text-[var(--error)]"
+            : attentionCount > 0
+              ? "border-[var(--pinned)] text-[var(--pinned)]"
+              : "text-[var(--ink-dim)]"
+        }`}
+        onClick={onJumpToAttention}
+        disabled={attentionCount === 0}
+        aria-keyshortcuts="A"
+        aria-label={`${attentionCount} ${attentionCount === 1 ? "oracle needs" : "oracles need"} attention${
+          attentionCritical ? ", including critical issues" : ""
+        }. Cycle attention targets with A.`}
+        title="Cycle oracles that need attention (A)"
+      >
+        <span aria-hidden="true">⚠ {attentionCount} need attention</span>
+        <kbd className="font-mono text-[10px] font-medium text-current">A</kbd>
       </button>
       <button
         type="button"
@@ -359,6 +386,7 @@ export default function App() {
   const pendingOracleIdRef = useRef<string | null>(null);
   const oraclePressRef = useRef<OraclePress | null>(null);
   const jumpCursorRef = useRef<string | null>(null);
+  const attentionCursorRef = useRef<string | null>(null);
   const [fleetGeometry, setFleetGeometry] = useState<Record<string, PersistedGeometry>>(
     restoredState.fleet,
   );
@@ -383,6 +411,18 @@ export default function App() {
     if (active.length > 0) return active;
     return [...positionedFleetTiles].sort(byActivity).slice(0, 1);
   }, [positionedFleetTiles]);
+  const attentionSummary = useMemo(
+    () => summarizeAttention(positionedFleetTiles),
+    [positionedFleetTiles],
+  );
+  const attentionTargets = useMemo<OracleTileItem[]>(() => (
+    [...attentionSummary.list].sort((left, right) => (
+      Number(right.attention.level === "critical") -
+        Number(left.attention.level === "critical") ||
+      finiteIdle(left.data.idleSec) - finiteIdle(right.data.idleSec) ||
+      left.id.localeCompare(right.id)
+    ))
+  ), [attentionSummary.list]);
   const statusTiles = useMemo<FleetTileItem[]>(
     () => [...positionedFleetTiles, ...boardItems],
     [boardItems, positionedFleetTiles],
@@ -522,6 +562,7 @@ export default function App() {
   const jumpToActive = useCallback(() => {
     cancelOracleClick();
     if (jumpTargets.length === 0) return;
+    attentionCursorRef.current = null;
     const cursorIndex = jumpTargets.findIndex(
       (item) => item.id === jumpCursorRef.current,
     );
@@ -530,10 +571,23 @@ export default function App() {
     focusOracle(next);
   }, [cancelOracleClick, focusOracle, jumpTargets]);
 
+  const jumpToAttention = useCallback(() => {
+    cancelOracleClick();
+    if (attentionTargets.length === 0) return;
+    jumpCursorRef.current = null;
+    const cursorIndex = attentionTargets.findIndex(
+      (item) => item.id === attentionCursorRef.current,
+    );
+    const next = attentionTargets[(cursorIndex + 1) % attentionTargets.length];
+    attentionCursorRef.current = next.id;
+    focusOracle(next);
+  }, [attentionTargets, cancelOracleClick, focusOracle]);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      const key = event.key.toLowerCase();
       if (
-        event.key.toLowerCase() !== "j" ||
+        (key !== "j" && key !== "a") ||
         event.altKey ||
         event.ctrlKey ||
         event.metaKey ||
@@ -543,12 +597,13 @@ export default function App() {
         return;
       }
       event.preventDefault();
-      jumpToActive();
+      if (key === "a") jumpToAttention();
+      else jumpToActive();
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [jumpToActive]);
+  }, [jumpToActive, jumpToAttention]);
 
   const handleOracleClick = useCallback((oracle: OracleTileItem) => {
     cancelOracleClick();
@@ -557,6 +612,7 @@ export default function App() {
       oracleClickTimerRef.current = null;
       pendingOracleIdRef.current = null;
       jumpCursorRef.current = null;
+      attentionCursorRef.current = null;
       focusOracle(oracle);
     }, ORACLE_SINGLE_CLICK_MS);
   }, [cancelOracleClick, focusOracle]);
@@ -632,6 +688,7 @@ export default function App() {
     setTerminalTiles([]);
     setSelectedOracleId(null);
     jumpCursorRef.current = null;
+    attentionCursorRef.current = null;
     setLayoutEpoch((current) => current + 1);
     setPersistenceWarning(null);
     initialFitComplete.current = true;
@@ -663,6 +720,7 @@ export default function App() {
         onClick={(event) => {
           if (event.target !== event.currentTarget) return;
           jumpCursorRef.current = null;
+          attentionCursorRef.current = null;
           setSelectedOracleId(null);
         }}
       >
@@ -686,7 +744,17 @@ export default function App() {
             >
               {item.kind === "oracle" ? (
                 <div
+                  ref={(element) => {
+                    const tile = element?.closest<HTMLElement>(".tile");
+                    if (!tile) return;
+                    if (item.attention.level === "none") {
+                      tile.removeAttribute("data-attention");
+                    } else {
+                      tile.dataset.attention = item.attention.level;
+                    }
+                  }}
                   className="oracle-tile relative h-full"
+                  data-attention={item.attention.level}
                   title="Double-click to open terminal preview"
                   onPointerDown={(event) => {
                     if (event.button !== 0) return;
@@ -723,6 +791,9 @@ export default function App() {
                         <>
                           {` · model ${item.data.modelTier || "unknown"}`}
                           {` · idle ${idleDetail(item.data.idleSec)}`}
+                          {item.attention.level !== "none" ? (
+                            ` · attention ${item.attention.reasons.join("; ")}`
+                          ) : null}
                         </>
                       ) : null}
                     </span>
@@ -771,6 +842,9 @@ export default function App() {
         zoom={canvas.zoom}
         onJumpToActive={jumpToActive}
         jumpDisabled={jumpTargets.length === 0}
+        onJumpToAttention={jumpToAttention}
+        attentionCount={attentionSummary.count}
+        attentionCritical={attentionSummary.criticalCount > 0}
         onAddNote={addNoteAtViewportCenter}
         onAddImage={addImageAtViewportCenter}
         onFit={() => canvas.fit(allTiles)}
