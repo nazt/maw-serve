@@ -1,54 +1,18 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark" />
     <meta
       name="description"
       content="Stoa interactive fleet board for live oracle operations."
     />
     <title>STOA · board</title>
-    <link rel="stylesheet" href="/api/agora/styles.css" />
-    <script defer src="/api/agora/canvas.js"></script>
-    <script defer src="/api/agora/tiles.js"></script>
-    <script defer src="/api/agora/fleet.js"></script>
-    <script defer src="/api/agora/app.js"></script>
+    <script type="module" crossorigin src="/api/agora/assets/index-CEJEKEBC.js"></script>
+    <link rel="stylesheet" crossorigin href="/api/agora/assets/index-DQvWDlDG.css">
   </head>
   <body>
-    <header class="site-header">
-      <h1>STOA <span aria-hidden="true">·</span> board</h1>
-      <time id="clock" class="live-clock" aria-label="Local time"></time>
-    </header>
-
-    <div
-      class="fabric"
-      id="fabric"
-      role="region"
-      aria-label="Interactive fleet board"
-      aria-busy="true"
-    >
-      <p class="board-state board-state--loading" id="board-state" role="status">
-        Acquiring fleet telemetry…
-      </p>
-    </div>
-
-    <div class="toolbar" role="toolbar" aria-label="Board controls">
-      <button id="add-note" type="button">Add note</button>
-      <button id="fit-board" type="button">Fit</button>
-      <output
-        id="zoom-label"
-        class="zoom-label"
-        data-zoom
-        aria-label="Canvas zoom"
-        aria-live="polite"
-      >
-        100%
-      </output>
-    </div>
-
-    <footer id="statusbar" aria-live="polite">
-      <span class="statusbar-message">Connecting to Stoa…</span>
-    </footer>
+    <div id="root"></div>
   </body>
 </html>
