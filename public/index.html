@@ -3,10 +3,31 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Stoa board</title>
-    <script type="module" src="/api/agora/app.js"></script>
+    <meta name="color-scheme" content="dark" />
+    <meta
+      name="description"
+      content="Stoa live fleet observatory for monitors, spaces, and oracle agents."
+    />
+    <title>STOA · fleet observatory</title>
+    <link rel="stylesheet" href="/api/agora/styles.css" />
+    <script defer src="/api/agora/topology.js"></script>
+    <script defer src="/api/agora/usage.js"></script>
+    <script defer src="/api/agora/app.js"></script>
   </head>
   <body>
-    <main>Stoa board — placeholder</main>
+    <header class="site-header">
+      <h1>STOA <span aria-hidden="true">·</span> fleet observatory</h1>
+      <time id="clock" class="live-clock" aria-label="Local time"></time>
+    </header>
+
+    <main id="regions" aria-live="polite" aria-busy="true">
+      <p class="board-state board-state--loading" role="status">
+        Acquiring fleet telemetry…
+      </p>
+    </main>
+
+    <footer id="statusbar" aria-live="polite">
+      <span class="statusbar-message">Connecting to Stoa…</span>
+    </footer>
   </body>
 </html>
