@@ -3,10 +3,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Fabric } from "./canvas/Fabric";
 import { useCanvas } from "./canvas/useCanvas";
 import {
+  acquireImageSource,
+  createImageBoardItem,
+  createNoteBoardItem,
   imageElementProps,
   type BoardItem,
   type NoteBoardItem,
 } from "./board/boardItems";
+import {
+  clearBoardState,
+  loadBoardState,
+  saveBoardState,
+  type PersistedGeometry,
+} from "./board/persist";
 import TerminalTile, {
   type TerminalTileItem,
 } from "./board/TerminalTile";
@@ -110,6 +119,7 @@ interface BoardToolbarProps {
   onAddNote: () => void;
   onAddImage: () => Promise<void>;
   onFit: () => void;
+  onReset: () => void;
   disabled: boolean;
   addingImage: boolean;
 }
@@ -119,6 +129,7 @@ function BoardToolbar({
   onAddNote,
   onAddImage,
   onFit,
+  onReset,
   disabled,
   addingImage,
 }: BoardToolbarProps) {
@@ -126,7 +137,7 @@ function BoardToolbar({
 
   return (
     <div
-      className="fixed bottom-11 left-1/2 z-40 flex -translate-x-1/2 items-center gap-1.5 rounded-lg bg-[var(--surface)] p-1.5 shadow-[0_0_0_1px_var(--line)]"
+      className="fixed bottom-11 left-1/2 z-40 flex max-w-[calc(100vw-1rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-1.5 rounded-lg bg-[var(--surface)] p-1.5 shadow-[0_0_0_1px_var(--line)]"
       role="toolbar"
       aria-label="Board controls"
     >
@@ -153,6 +164,13 @@ function BoardToolbar({
         disabled={disabled}
       >
         Fit
+      </button>
+      <button
+        type="button"
+        className={toolbarButtonClass}
+        onClick={onReset}
+      >
+        Reset layout
       </button>
       <output
         className="min-w-12 px-1 text-center font-mono text-xs tabular-nums text-[var(--idle)]"
@@ -239,7 +257,10 @@ function terminalPane(
   candidates.sort((left, right) => {
     const leftStatus = String(left.status ?? "stale").toLowerCase();
     const rightStatus = String(right.status ?? "stale").toLowerCase();
-    const statusMatch = Number(rightStatus === tile.data.status) - Number(leftStatus === tile.data.status);
+    const statusMatch = (
+      Number(rightStatus === tile.data.status) -
+      Number(leftStatus === tile.data.status)
+    );
     return statusMatch || finiteIdle(left.idleSec) - finiteIdle(right.idleSec);
   });
 
@@ -250,41 +271,80 @@ function terminalPane(
 }
 
 export default function App() {
-  const canvas = useCanvas();
+  const [restoredState] = useState(loadBoardState);
+  const canvas = useCanvas(restoredState.canvas);
   const {
-    tiles,
+    fleetTiles,
     census,
     usage,
     loading,
     error,
-    addNote,
-    addImage,
-    updateTile,
-    updateNote,
   } = useFleet();
   const now = useClock();
   const [addingImage, setAddingImage] = useState(false);
-  const [terminalTiles, setTerminalTiles] = useState<TerminalTileItem[]>([]);
-  const initialFitComplete = useRef(false);
+  const [layoutEpoch, setLayoutEpoch] = useState(0);
+  const [persistenceWarning, setPersistenceWarning] = useState<string | null>(null);
+  const [fleetGeometry, setFleetGeometry] = useState<Record<string, PersistedGeometry>>(
+    restoredState.fleet,
+  );
+  const [boardItems, setBoardItems] = useState<BoardItem[]>(() => (
+    restoredState.items.filter((item): item is BoardItem => item.kind !== "terminal")
+  ));
+  const [terminalTiles, setTerminalTiles] = useState<TerminalTileItem[]>(() => (
+    restoredState.items.filter((item): item is TerminalTileItem => item.kind === "terminal")
+  ));
+  const initialFitComplete = useRef(restoredState.restored);
+  const positionedFleetTiles = useMemo<OracleTileItem[]>(() => (
+    fleetTiles.map((item) => ({ ...item, ...fleetGeometry[item.id] }))
+  ), [fleetGeometry, fleetTiles]);
+  const statusTiles = useMemo<FleetTileItem[]>(
+    () => [...positionedFleetTiles, ...boardItems],
+    [boardItems, positionedFleetTiles],
+  );
   const allTiles = useMemo<AppTileItem[]>(
-    () => [...tiles, ...terminalTiles],
-    [terminalTiles, tiles],
+    () => [...statusTiles, ...terminalTiles],
+    [statusTiles, terminalTiles],
   );
-  const totals = useMemo(() => summarizeFleet(tiles, usage), [tiles, usage]);
-  const hasOracleTiles = useMemo(
-    () => tiles.some((item) => item.kind === "oracle"),
-    [tiles],
-  );
+  const totals = useMemo(() => summarizeFleet(statusTiles, usage), [statusTiles, usage]);
+  const hasOracleTiles = positionedFleetTiles.length > 0;
 
   useEffect(() => {
     if (initialFitComplete.current || !hasOracleTiles) return;
 
     const frame = window.requestAnimationFrame(() => {
-      canvas.fit(tiles);
+      canvas.fit(positionedFleetTiles);
       initialFitComplete.current = true;
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [canvas, hasOracleTiles, tiles]);
+  }, [canvas, hasOracleTiles, positionedFleetTiles]);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      const result = saveBoardState({
+        version: 1,
+        fleet: fleetGeometry,
+        items: [...boardItems, ...terminalTiles],
+        canvas: { center: canvas.center, zoom: canvas.zoom },
+      });
+      setPersistenceWarning(
+        result.error ?? (
+          result.skippedImages > 0
+            ? `${result.skippedImages} large image${
+              result.skippedImages === 1 ? " was" : "s were"
+            } omitted from saved layout`
+            : null
+        ),
+      );
+    }, 500);
+
+    return () => window.clearTimeout(timeout);
+  }, [
+    boardItems,
+    canvas.center,
+    canvas.zoom,
+    fleetGeometry,
+    terminalTiles,
+  ]);
 
   const viewportCenter = useCallback(() => {
     const fabric = canvas.fabricRef.current;
@@ -298,17 +358,21 @@ export default function App() {
   }, [canvas]);
 
   const addNoteAtViewportCenter = useCallback(() => {
-    addNote({ center: viewportCenter() });
-  }, [addNote, viewportCenter]);
+    const note = createNoteBoardItem({ center: viewportCenter() });
+    setBoardItems((current) => [...current, note]);
+  }, [viewportCenter]);
 
   const addImageAtViewportCenter = useCallback(async () => {
     setAddingImage(true);
     try {
-      await addImage({ center: viewportCenter() });
+      const source = await acquireImageSource();
+      if (!source) return;
+      const image = createImageBoardItem(source, { center: viewportCenter() });
+      setBoardItems((current) => [...current, image]);
     } finally {
       setAddingImage(false);
     }
-  }, [addImage, viewportCenter]);
+  }, [viewportCenter]);
 
   const openTerminal = useCallback((oracle: OracleTileItem) => {
     const target = terminalPane(census, oracle);
@@ -338,18 +402,46 @@ export default function App() {
   }, [census]);
 
   const updateAppTile = useCallback((next: AppTileItem) => {
+    if (next.kind === "oracle") {
+      setFleetGeometry((current) => ({
+        ...current,
+        [next.id]: { x: next.x, y: next.y, w: next.w, h: next.h },
+      }));
+      return;
+    }
     if (next.kind === "terminal") {
       setTerminalTiles((current) => current.map((item) => (
         item.id === next.id ? next : item
       )));
       return;
     }
-    updateTile(next);
-  }, [updateTile]);
+    setBoardItems((current) => current.map((item) => (
+      item.id === next.id ? next : item
+    )));
+  }, []);
+
+  const updateNote = useCallback((id: string, text: string) => {
+    setBoardItems((current) => current.map((item) => (
+      item.id === id && item.kind === "note"
+        ? { ...item, data: { text } }
+        : item
+    )));
+  }, []);
 
   const closeTerminal = useCallback((id: string) => {
     setTerminalTiles((current) => current.filter((item) => item.id !== id));
   }, []);
+
+  const resetLayout = useCallback(() => {
+    clearBoardState();
+    setFleetGeometry({});
+    setBoardItems([]);
+    setTerminalTiles([]);
+    setLayoutEpoch((current) => current + 1);
+    setPersistenceWarning(null);
+    initialFitComplete.current = true;
+    window.requestAnimationFrame(() => canvas.fit(fleetTiles));
+  }, [canvas, fleetTiles]);
 
   return (
     <div className="h-dvh w-screen overflow-hidden bg-[var(--bg)] text-[var(--ink)]">
@@ -372,7 +464,7 @@ export default function App() {
         <BoardState loading={loading} error={error} hasTiles={hasOracleTiles} />
         {allTiles.map((item) => (
           <Tile
-            key={item.id}
+            key={`${layoutEpoch}:${item.id}`}
             item={item}
             siblings={allTiles}
             canvas={canvas}
@@ -404,11 +496,20 @@ export default function App() {
         zoom={canvas.zoom}
         onAddNote={addNoteAtViewportCenter}
         onAddImage={addImageAtViewportCenter}
-        onFit={canvas.fit}
-        disabled={loading && tiles.length === 0}
+        onFit={() => canvas.fit(allTiles)}
+        onReset={resetLayout}
+        disabled={loading && fleetTiles.length === 0}
         addingImage={addingImage}
       />
-      <StatusBar items={tiles} usage={usage} error={error} />
+      {persistenceWarning ? (
+        <p
+          className="pointer-events-none fixed bottom-24 left-1/2 z-40 -translate-x-1/2 rounded bg-[var(--surface)] px-2.5 py-1 font-mono text-[10px] text-[var(--pinned)] shadow-[0_0_0_1px_var(--line)]"
+          role="status"
+        >
+          {persistenceWarning}
+        </p>
+      ) : null}
+      <StatusBar items={statusTiles} usage={usage} error={error} />
 
       <output className="sr-only" aria-live="polite">
         {totals.active + totals.idle + totals.stale} fleet tiles
