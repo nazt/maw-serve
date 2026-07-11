@@ -7,10 +7,22 @@ import {
   type BoardItem,
   type NoteBoardItem,
 } from "./board/boardItems";
+import TerminalTile, {
+  type TerminalTileItem,
+} from "./board/TerminalTile";
 import OracleTileContent from "./fleet/OracleTileContent";
 import StatusBar, { summarizeFleet } from "./fleet/StatusBar";
-import { useFleet, type FleetTileItem } from "./fleet/useFleet";
+import {
+  normalizeOracleHandle,
+  useFleet,
+  type CensusOracle,
+  type CensusPayload,
+  type FleetTileItem,
+  type OracleTileItem,
+} from "./fleet/useFleet";
 import Tile from "./tiles/Tile";
+
+type AppTileItem = FleetTileItem | TerminalTileItem;
 
 const clockFormatter = new Intl.DateTimeFormat(undefined, {
   year: "numeric",
@@ -178,13 +190,17 @@ function BoardState({ loading, error, hasTiles }: BoardStateProps) {
   );
 }
 
-function tileClassName(item: FleetTileItem): string {
+function tileClassName(item: AppTileItem): string {
   if (item.kind === "note") {
     return "rounded-md bg-[oklch(0.29_0.055_75)]";
   }
 
   if (item.kind === "image") {
     return "rounded-md bg-[var(--surface)]";
+  }
+
+  if (item.kind === "terminal") {
+    return "rounded-md bg-[oklch(0.115_0.018_220)]";
   }
 
   return [
@@ -195,10 +211,49 @@ function tileClassName(item: FleetTileItem): string {
   ].join(" ");
 }
 
+function finiteIdle(value: number | null | undefined): number {
+  const idle = Number(value);
+  return Number.isFinite(idle) ? idle : Number.POSITIVE_INFINITY;
+}
+
+function terminalPane(
+  census: CensusPayload | null,
+  tile: OracleTileItem,
+): { session: string; window: string } | null {
+  const candidates: CensusOracle[] = [];
+
+  for (const display of census?.displays ?? []) {
+    for (const space of display.spaces ?? []) {
+      for (const oracle of space.oracles ?? []) {
+        if (
+          normalizeOracleHandle(oracle.oracle) === tile.id &&
+          oracle.session &&
+          oracle.pane
+        ) {
+          candidates.push(oracle);
+        }
+      }
+    }
+  }
+
+  candidates.sort((left, right) => {
+    const leftStatus = String(left.status ?? "stale").toLowerCase();
+    const rightStatus = String(right.status ?? "stale").toLowerCase();
+    const statusMatch = Number(rightStatus === tile.data.status) - Number(leftStatus === tile.data.status);
+    return statusMatch || finiteIdle(left.idleSec) - finiteIdle(right.idleSec);
+  });
+
+  const target = candidates[0];
+  return target?.session && target.pane
+    ? { session: target.session, window: target.pane }
+    : null;
+}
+
 export default function App() {
   const canvas = useCanvas();
   const {
     tiles,
+    census,
     usage,
     loading,
     error,
@@ -209,7 +264,12 @@ export default function App() {
   } = useFleet();
   const now = useClock();
   const [addingImage, setAddingImage] = useState(false);
+  const [terminalTiles, setTerminalTiles] = useState<TerminalTileItem[]>([]);
   const initialFitComplete = useRef(false);
+  const allTiles = useMemo<AppTileItem[]>(
+    () => [...tiles, ...terminalTiles],
+    [terminalTiles, tiles],
+  );
   const totals = useMemo(() => summarizeFleet(tiles, usage), [tiles, usage]);
   const hasOracleTiles = useMemo(
     () => tiles.some((item) => item.kind === "oracle"),
@@ -250,6 +310,47 @@ export default function App() {
     }
   }, [addImage, viewportCenter]);
 
+  const openTerminal = useCallback((oracle: OracleTileItem) => {
+    const target = terminalPane(census, oracle);
+    if (!target) return;
+
+    const id = `terminal:${target.session}:${target.window}`;
+    setTerminalTiles((current) => {
+      if (current.some((item) => item.id === id)) return current;
+      const offset = (current.length % 5) * 24;
+      return [
+        ...current,
+        {
+          id,
+          kind: "terminal",
+          x: oracle.x + 36 + offset,
+          y: oracle.y + oracle.h + 28 + offset,
+          w: 560,
+          h: 340,
+          data: {
+            oracle: oracle.data.oracle,
+            session: target.session,
+            window: target.window,
+          },
+        },
+      ];
+    });
+  }, [census]);
+
+  const updateAppTile = useCallback((next: AppTileItem) => {
+    if (next.kind === "terminal") {
+      setTerminalTiles((current) => current.map((item) => (
+        item.id === next.id ? next : item
+      )));
+      return;
+    }
+    updateTile(next);
+  }, [updateTile]);
+
+  const closeTerminal = useCallback((id: string) => {
+    setTerminalTiles((current) => current.filter((item) => item.id !== id));
+  }, []);
+
   return (
     <div className="h-dvh w-screen overflow-hidden bg-[var(--bg)] text-[var(--ink)]">
       <header className="pointer-events-none fixed left-3 top-3 z-40 font-mono">
@@ -269,18 +370,29 @@ export default function App() {
         aria-busy={loading}
       >
         <BoardState loading={loading} error={error} hasTiles={hasOracleTiles} />
-        {tiles.map((item) => (
+        {allTiles.map((item) => (
           <Tile
             key={item.id}
             item={item}
-            siblings={tiles}
+            siblings={allTiles}
             canvas={canvas}
             className={tileClassName(item)}
-            onChange={updateTile}
-            onCommit={updateTile}
+            onChange={updateAppTile}
+            onCommit={updateAppTile}
           >
             {item.kind === "oracle" ? (
-              <OracleTileContent item={item} />
+              <div
+                className="h-full"
+                title="Double-click to open terminal preview"
+                onDoubleClick={(event) => {
+                  event.stopPropagation();
+                  openTerminal(item);
+                }}
+              >
+                <OracleTileContent item={item} />
+              </div>
+            ) : item.kind === "terminal" ? (
+              <TerminalTile item={item} onClose={closeTerminal} />
             ) : (
               <BoardItemContent item={item} onNoteChange={updateNote} />
             )}
