@@ -1,0 +1,40 @@
+{
+  "schema": "maw.census.v1",
+  "displays": [
+    {
+      "name": "main",
+      "spaces": [
+        {
+          "name": "work",
+          "oracles": [
+            {
+              "oracle": "m5",
+              "session": "maw-serve",
+              "pane": "%42",
+              "modelTier": "frontier",
+              "status": "busy",
+              "idleSec": 0,
+              "annotation": "building Stoa census route",
+              "pinned": false
+            }
+          ]
+        },
+        {
+          "name": "review",
+          "oracles": [
+            {
+              "oracle": "agora",
+              "session": "agora",
+              "pane": "%7",
+              "modelTier": "mentor",
+              "status": "idle",
+              "idleSec": 128,
+              "annotation": "design mentor",
+              "pinned": true
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
