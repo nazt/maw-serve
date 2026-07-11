@@ -33,10 +33,19 @@ import Tile from "./tiles/Tile";
 
 type AppTileItem = FleetTileItem | TerminalTileItem;
 type HintState = "visible" | "leaving";
+type OraclePress = {
+  oracle: OracleTileItem;
+  pointerId: number;
+  clientX: number;
+  clientY: number;
+  doublePress: boolean;
+  moved: boolean;
+};
 
 const BOARD_HINT_STORAGE_KEY = "stoa-board-hint-v1";
 const BOARD_HINT_VISIBLE_MS = 7_000;
 const BOARD_HINT_EXIT_MS = 240;
+const ORACLE_SINGLE_CLICK_MS = 280;
 
 const STATUS_LEGEND = [
   ["active", "active"],
@@ -265,6 +274,14 @@ function finiteIdle(value: number | null | undefined): number {
   return Number.isFinite(idle) ? idle : Number.POSITIVE_INFINITY;
 }
 
+function idleDetail(value: number | null): string {
+  if (value === null || !Number.isFinite(value) || value < 0) return "—";
+  if (value <= 5) return "live";
+  if (value < 60) return `${Math.floor(value)}s`;
+  if (value < 3_600) return `${Math.floor(value / 60)}m`;
+  return `${Math.floor(value / 3_600)}h`;
+}
+
 function terminalPane(
   census: CensusPayload | null,
   tile: OracleTileItem,
@@ -316,6 +333,10 @@ export default function App() {
   const [hintState, setHintState] = useState<HintState | null>(initialHintState);
   const [layoutEpoch, setLayoutEpoch] = useState(0);
   const [persistenceWarning, setPersistenceWarning] = useState<string | null>(null);
+  const [selectedOracleId, setSelectedOracleId] = useState<string | null>(null);
+  const oracleClickTimerRef = useRef<number | null>(null);
+  const pendingOracleIdRef = useRef<string | null>(null);
+  const oraclePressRef = useRef<OraclePress | null>(null);
   const [fleetGeometry, setFleetGeometry] = useState<Record<string, PersistedGeometry>>(
     restoredState.fleet,
   );
@@ -356,6 +377,16 @@ export default function App() {
     const timeout = window.setTimeout(() => setHintState(null), BOARD_HINT_EXIT_MS);
     return () => window.clearTimeout(timeout);
   }, [dismissHint, hintState]);
+
+  const cancelOracleClick = useCallback(() => {
+    if (oracleClickTimerRef.current !== null) {
+      window.clearTimeout(oracleClickTimerRef.current);
+    }
+    oracleClickTimerRef.current = null;
+    pendingOracleIdRef.current = null;
+  }, []);
+
+  useEffect(() => cancelOracleClick, [cancelOracleClick]);
 
   useEffect(() => {
     if (initialFitComplete.current || !hasOracleTiles) return;
@@ -450,6 +481,54 @@ export default function App() {
     });
   }, [census]);
 
+  const focusOracle = useCallback((oracle: OracleTileItem) => {
+    setSelectedOracleId(oracle.id);
+    canvas.focusOn({ x: oracle.x, y: oracle.y, w: oracle.w, h: oracle.h });
+  }, [canvas]);
+
+  const handleOracleClick = useCallback((oracle: OracleTileItem) => {
+    cancelOracleClick();
+    pendingOracleIdRef.current = oracle.id;
+    oracleClickTimerRef.current = window.setTimeout(() => {
+      oracleClickTimerRef.current = null;
+      pendingOracleIdRef.current = null;
+      focusOracle(oracle);
+    }, ORACLE_SINGLE_CLICK_MS);
+  }, [cancelOracleClick, focusOracle]);
+
+  const handleOracleDoubleClick = useCallback((oracle: OracleTileItem) => {
+    cancelOracleClick();
+    openTerminal(oracle);
+  }, [cancelOracleClick, openTerminal]);
+
+  useEffect(() => {
+    const onPointerMove = (event: PointerEvent) => {
+      const press = oraclePressRef.current;
+      if (!press || press.pointerId !== event.pointerId) return;
+      press.moved ||= Math.hypot(
+        event.clientX - press.clientX,
+        event.clientY - press.clientY,
+      ) > 5;
+    };
+    const onPointerEnd = (event: PointerEvent) => {
+      const press = oraclePressRef.current;
+      if (!press || press.pointerId !== event.pointerId) return;
+      oraclePressRef.current = null;
+      if (event.type === "pointercancel" || press.moved) return;
+      if (press.doublePress) handleOracleDoubleClick(press.oracle);
+      else handleOracleClick(press.oracle);
+    };
+
+    window.addEventListener("pointermove", onPointerMove, true);
+    window.addEventListener("pointerup", onPointerEnd, true);
+    window.addEventListener("pointercancel", onPointerEnd, true);
+    return () => {
+      window.removeEventListener("pointermove", onPointerMove, true);
+      window.removeEventListener("pointerup", onPointerEnd, true);
+      window.removeEventListener("pointercancel", onPointerEnd, true);
+    };
+  }, [handleOracleClick, handleOracleDoubleClick]);
+
   const updateAppTile = useCallback((next: AppTileItem) => {
     if (next.kind === "oracle") {
       setFleetGeometry((current) => ({
@@ -486,6 +565,7 @@ export default function App() {
     setFleetGeometry({});
     setBoardItems([]);
     setTerminalTiles([]);
+    setSelectedOracleId(null);
     setLayoutEpoch((current) => current + 1);
     setPersistenceWarning(null);
     initialFitComplete.current = true;
@@ -514,17 +594,25 @@ export default function App() {
         className="bg-[var(--bg)]"
         aria-label="Interactive fleet board"
         aria-busy={loading}
+        onClick={(event) => {
+          if (event.target === event.currentTarget) setSelectedOracleId(null);
+        }}
       >
         <BoardState loading={loading} error={error} hasTiles={hasOracleTiles} />
         {allTiles.map((item) => {
           const pane = item.kind === "oracle" ? terminalPane(census, item) : null;
+          const selected = item.kind === "oracle" && item.id === selectedOracleId;
           return (
             <Tile
               key={`${layoutEpoch}:${item.id}`}
               item={item}
               siblings={allTiles}
               canvas={canvas}
-              className={tileClassName(item)}
+              className={`${tileClassName(item)} ${
+                selected
+                  ? "selected z-20 ring-2 ring-[var(--idle)] ring-offset-2 ring-offset-[var(--bg)] shadow-[0_0_14px_var(--idle-glow)]"
+                  : ""
+              }`}
               onChange={updateAppTile}
               onCommit={updateAppTile}
             >
@@ -532,15 +620,43 @@ export default function App() {
                 <div
                   className="oracle-tile relative h-full"
                   title="Double-click to open terminal preview"
+                  onPointerDown={(event) => {
+                    if (event.button !== 0) return;
+                    const doublePress = pendingOracleIdRef.current === item.id;
+                    cancelOracleClick();
+                    oraclePressRef.current = {
+                      oracle: item,
+                      pointerId: event.pointerId,
+                      clientX: event.clientX,
+                      clientY: event.clientY,
+                      doublePress,
+                      moved: false,
+                    };
+                  }}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                  }}
                   onDoubleClick={(event) => {
                     event.stopPropagation();
-                    openTerminal(item);
+                    handleOracleDoubleClick(item);
                   }}
                 >
                   <OracleTileContent item={item} />
-                  {pane ? (
-                    <span className="oracle-meta">
-                      {pane.session}:{pane.window}
+                  {pane || selected ? (
+                    <span
+                      className={`oracle-meta ${
+                        selected
+                          ? "!whitespace-normal !opacity-100 [translate:0_0]"
+                          : ""
+                      }`}
+                    >
+                      {pane ? `${pane.session}:${pane.window}` : "no live pane"}
+                      {selected ? (
+                        <>
+                          {` · model ${item.data.modelTier || "unknown"}`}
+                          {` · idle ${idleDetail(item.data.idleSec)}`}
+                        </>
+                      ) : null}
                     </span>
                   ) : null}
                 </div>
