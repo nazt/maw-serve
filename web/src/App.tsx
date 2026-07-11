@@ -32,6 +32,18 @@ import {
 import Tile from "./tiles/Tile";
 
 type AppTileItem = FleetTileItem | TerminalTileItem;
+type HintState = "visible" | "leaving";
+
+const BOARD_HINT_STORAGE_KEY = "stoa-board-hint-v1";
+const BOARD_HINT_VISIBLE_MS = 7_000;
+const BOARD_HINT_EXIT_MS = 240;
+
+const STATUS_LEGEND = [
+  ["active", "active"],
+  ["idle", "idle"],
+  ["stale", "stale"],
+  ["pinned", "pinned"],
+] as const;
 
 const clockFormatter = new Intl.DateTimeFormat(undefined, {
   year: "numeric",
@@ -52,6 +64,25 @@ function useClock(): Date {
   }, []);
 
   return now;
+}
+
+function initialHintState(): HintState | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage.getItem(BOARD_HINT_STORAGE_KEY) === null
+      ? "visible"
+      : null;
+  } catch {
+    return "visible";
+  }
+}
+
+function persistHintDismissal(): void {
+  try {
+    window.localStorage.setItem(BOARD_HINT_STORAGE_KEY, "dismissed");
+  } catch {
+    // The hint still leaves when browser storage is unavailable.
+  }
 }
 
 interface NoteTileContentProps {
@@ -282,6 +313,7 @@ export default function App() {
   } = useFleet();
   const now = useClock();
   const [addingImage, setAddingImage] = useState(false);
+  const [hintState, setHintState] = useState<HintState | null>(initialHintState);
   const [layoutEpoch, setLayoutEpoch] = useState(0);
   const [persistenceWarning, setPersistenceWarning] = useState<string | null>(null);
   const [fleetGeometry, setFleetGeometry] = useState<Record<string, PersistedGeometry>>(
@@ -307,6 +339,23 @@ export default function App() {
   );
   const totals = useMemo(() => summarizeFleet(statusTiles, usage), [statusTiles, usage]);
   const hasOracleTiles = positionedFleetTiles.length > 0;
+
+  const dismissHint = useCallback(() => {
+    setHintState((current) => current === "visible" ? "leaving" : current);
+  }, []);
+
+  useEffect(() => {
+    if (hintState === null) return;
+
+    if (hintState === "visible") {
+      const timeout = window.setTimeout(dismissHint, BOARD_HINT_VISIBLE_MS);
+      return () => window.clearTimeout(timeout);
+    }
+
+    persistHintDismissal();
+    const timeout = window.setTimeout(() => setHintState(null), BOARD_HINT_EXIT_MS);
+    return () => window.clearTimeout(timeout);
+  }, [dismissHint, hintState]);
 
   useEffect(() => {
     if (initialFitComplete.current || !hasOracleTiles) return;
@@ -444,7 +493,12 @@ export default function App() {
   }, [canvas, fleetTiles]);
 
   return (
-    <div className="h-dvh w-screen overflow-hidden bg-[var(--bg)] text-[var(--ink)]">
+    <div
+      className="h-dvh w-screen overflow-hidden bg-[var(--bg)] text-[var(--ink)]"
+      onPointerDownCapture={dismissHint}
+      onWheelCapture={dismissHint}
+      onKeyDownCapture={dismissHint}
+    >
       <header className="pointer-events-none fixed left-3 top-3 z-40 font-mono">
         <h1 className="text-sm font-bold tracking-tight">STOA · board</h1>
         <time
@@ -462,35 +516,72 @@ export default function App() {
         aria-busy={loading}
       >
         <BoardState loading={loading} error={error} hasTiles={hasOracleTiles} />
-        {allTiles.map((item) => (
-          <Tile
-            key={`${layoutEpoch}:${item.id}`}
-            item={item}
-            siblings={allTiles}
-            canvas={canvas}
-            className={tileClassName(item)}
-            onChange={updateAppTile}
-            onCommit={updateAppTile}
-          >
-            {item.kind === "oracle" ? (
-              <div
-                className="h-full"
-                title="Double-click to open terminal preview"
-                onDoubleClick={(event) => {
-                  event.stopPropagation();
-                  openTerminal(item);
-                }}
-              >
-                <OracleTileContent item={item} />
-              </div>
-            ) : item.kind === "terminal" ? (
-              <TerminalTile item={item} onClose={closeTerminal} />
-            ) : (
-              <BoardItemContent item={item} onNoteChange={updateNote} />
-            )}
-          </Tile>
-        ))}
+        {allTiles.map((item) => {
+          const pane = item.kind === "oracle" ? terminalPane(census, item) : null;
+          return (
+            <Tile
+              key={`${layoutEpoch}:${item.id}`}
+              item={item}
+              siblings={allTiles}
+              canvas={canvas}
+              className={tileClassName(item)}
+              onChange={updateAppTile}
+              onCommit={updateAppTile}
+            >
+              {item.kind === "oracle" ? (
+                <div
+                  className="oracle-tile relative h-full"
+                  title="Double-click to open terminal preview"
+                  onDoubleClick={(event) => {
+                    event.stopPropagation();
+                    openTerminal(item);
+                  }}
+                >
+                  <OracleTileContent item={item} />
+                  {pane ? (
+                    <span className="oracle-meta">
+                      {pane.session}:{pane.window}
+                    </span>
+                  ) : null}
+                </div>
+              ) : item.kind === "terminal" ? (
+                <TerminalTile item={item} onClose={closeTerminal} />
+              ) : (
+                <BoardItemContent item={item} onNoteChange={updateNote} />
+              )}
+            </Tile>
+          );
+        })}
       </Fabric>
+
+      {hintState ? (
+        <aside className="board-hint" data-state={hintState} role="status">
+          <span>
+            double-click an oracle for its live terminal · drag to arrange · Add note/image
+          </span>
+          <button
+            type="button"
+            className="board-hint__dismiss"
+            aria-label="Dismiss board hint"
+            onClick={dismissHint}
+          >
+            ×
+          </button>
+        </aside>
+      ) : null}
+
+      <aside className="status-legend" aria-label="Oracle status legend">
+        {STATUS_LEGEND.map(([status, label]) => (
+          <span className="status-legend__item" key={status}>
+            <span
+              className="status-legend__dot"
+              data-status={status}
+              aria-hidden="true"
+            />
+            <span>{label}</span>
+          </span>
+        ))}
+      </aside>
 
       <BoardToolbar
         zoom={canvas.zoom}
