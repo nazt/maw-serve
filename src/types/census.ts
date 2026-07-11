@@ -1,14 +1,20 @@
 /**
  * Superset topology for Stoa's read-only fleet dashboard.
  *
- * Required-now fields are normalized from `maw census --json` (#380) and are the
- * v1 source of truth. Display-census SpaceReport fields are optional/nullable so
- * they can be populated later without changing consumer code or the topology
- * contract.
+ * Required-now fields are normalized from the final `maw census --json` #382
+ * schema. Display-census SpaceReport enrichment is optional/nullable so it can
+ * be populated later without changing consumer code or the topology contract.
  */
 export type StoaFleetTopology = {
-  /** Required-now: primary v1 oracle rows from `maw census --json`. */
-  oracles: StoaCensusOracle[];
+  /** Required-now: primary v1 census grouped by display+space. */
+  spaces: StoaCensusSpace[];
+
+  /**
+   * Optional-now: pin records sourced from window-arranger's pins.json.
+   * Nullable/omitted means the pins source was unavailable; [] means available
+   * and intentionally empty.
+   */
+  pins?: StoaCensusPin[] | null;
 
   /**
    * Optional-future: display-census SpaceReport `ts` when that feed is joined.
@@ -22,11 +28,18 @@ export type StoaFleetTopology = {
   /** Optional-future: per-window global pixel frames from display-census. */
   windows?: StoaDisplayCensusWindow[] | null;
 
-  /** Optional-future: per-space visibility/focus from display-census. */
-  spaces?: StoaDisplayCensusSpace[] | null;
+  /** Optional-future: SpaceReport spaces[] visibility/focus enrichment. */
+  displayCensusSpaces?: StoaDisplayCensusSpace[] | null;
 
   /** Optional-future: display frames from display-census. */
   displays?: StoaDisplayCensusDisplay[] | null;
+};
+
+/** Required-now census space group from final `maw census --json` #382. */
+export type StoaCensusSpace = {
+  display: number;
+  space: number;
+  oracles: StoaCensusOracle[];
 };
 
 declare const redactedTitleBrand: unique symbol;
@@ -42,29 +55,39 @@ export type RedactedTitle = string & {
   readonly [redactedTitleBrand]: "RedactedTitle";
 };
 
-/**
- * Required-now `maw census --json` oracle row.
- *
- * MAW-RS-RECONCILE (#380): reconcile these best-effort field names with maw-rs
- * when the live census schema ships. The required concepts are oracle handle,
- * session/pane identifiers, host/machine, and status, but the exact JSON names
- * may change.
- */
+/** Required-now oracle row from final `maw census --json` #382. */
 export type StoaCensusOracle = {
   /** Oracle handle, e.g. the maw oracle name shown on the board tile. */
   oracle: string;
 
-  /** Required tmux/session identifier from maw census. */
-  sessionId: string;
+  /** Optional tmux/session identifier from maw census. */
+  session?: string;
 
-  /** Required tmux pane identifier from maw census. */
-  paneId: string;
+  /** Optional tmux pane identifier from maw census. */
+  pane?: string;
 
-  /** Required host or machine identity; normalized as `machine` for consumers. */
-  machine: string;
+  /** Final #382 model tier label for grouping or badge display. */
+  model_tier: string;
 
   /** Required lifecycle/readiness status from maw census. */
   status: StoaOracleStatus;
+
+  /** Optional idle age, in seconds, when maw census can report it. */
+  idle_sec?: number;
+
+  /** Required safe census annotation for the oracle. */
+  annotation: string;
+
+  /** True when the oracle is pinned to this display+space. */
+  pinned: boolean;
+};
+
+/** Pin row sourced from window-arranger's pins.json. */
+export type StoaCensusPin = {
+  display: number;
+  space: number;
+  oracle: string;
+  note?: string;
 };
 
 /** Known Stoa statuses plus forward-compatible strings from maw-rs. */
@@ -120,7 +143,7 @@ export type StoaDisplayCensusWindow = {
   pinned?: boolean | null;
 };
 
-/** Optional-future display-census space row. */
+/** Optional-future display-census SpaceReport spaces[] row. */
 export type StoaDisplayCensusSpace = {
   index: number;
   display: number;
