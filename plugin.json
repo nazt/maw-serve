@@ -1,0 +1,18 @@
+{
+  "name": "maw-serve",
+  "version": "0.1.0",
+  "description": "Native Oracle Board (Stoa) — read-only fleet dashboard, extending maw serve",
+  "sdk": "^1.0.0",
+  "cli": {
+    "command": "agora",
+    "aliases": ["board"]
+  },
+  "engine": {
+    "serve": {
+      "prefix": "/api/agora",
+      "health": "/health",
+      "command": "bun run server.ts"
+    }
+  },
+  "capabilities": ["peer", "tmux:read"]
+}

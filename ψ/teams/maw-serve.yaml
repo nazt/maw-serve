@@ -1,0 +1,151 @@
+name: maw-serve
+project: /opt/Code/github.com/nazt/maw-serve
+defaults:
+  worktree: true
+
+members:
+  - role: lead
+    name: maw-serve-lead
+    engine: claude
+    worktree: false
+
+  - role: coder
+    name: coder-1
+    engine: omx
+    branch: agents/maw-serve-coder-1
+    prompt: |
+      You are coder-1 on the nazt/maw-serve team. WAIT for tasks from the lead via maw hey.
+      Own your loop end to end (read, code, test, report) — do not ask the lead to debug for you.
+
+      TASK A1 — Repo scaffold + attribution + plugin manifest.
+      Repo: /opt/Code/github.com/nazt/maw-serve (currently empty, public GitHub repo).
+      Context: this is a `maw` plugin implementing the Native Oracle Board ("Stoa") — a
+      read-only fleet dashboard. Architecture (resolved 2026-07-11 by maw-rs, engine.serve v1
+      / issue #384): engine.serve in v1 is MANIFEST ROUTE REGISTRATION/DISCOVERY ONLY — the
+      daemon does NOT exec handlers in-daemon, reverse-proxy, serve static, or WS-upgrade for
+      you. This board is YOUR OWN bun/js server running on a side port that the daemon just
+      registers and launches.
+
+      Build:
+      1. `plugin.json` (maw plugin manifest) with:
+         - entry/runtime: bun (js)
+         - cli: { command: "agora", aliases: ["board"] }
+         - engine.serve: { command: <path to your bun server entry, e.g. "bun run src/server.ts">,
+           prefix: "/api/agora", health: "/api/agora/health", events: true,
+           eventPath: "/api/agora/events" }
+         - capabilities: ["peer", "tmux:read"]  (peer = call daemon :3456 as an authed client;
+           tmux:read = capture tiles)
+      2. Minimal bun server stub at src/server.ts that boots, listens on a side port (read from
+         env/config, do not hardcode), and answers GET /api/agora/health with 200 + a JSON stub.
+         ALL board routes must live under /api/agora/* — this prefix is load-bearing (v2 will
+         reverse-proxy :3456/api/agora/* -> your process; if you use it now, v2 is drop-in and
+         URLs never change). Do not build any other route yet.
+      3. README.md — MUST lead with the §1 trust model before anything else:
+         - No secrets in feeds (mandatory redaction filter on ingest, not a hope)
+         - No filesystem serving by default (never serve /root or home dirs)
+         - No UA-spoofing / evasion
+         - Explicit auth via fleet identity (reuse maw serve's ed25519 + TOFU trust store)
+         - State = projection/cache over the fleet's real sources, NOT source-of-truth
+         - v1 is READ-ONLY
+         Then describe what Stoa is and the side-port-bun-server architecture above.
+      4. ATTRIBUTION.md — credit ekzhang/sshx (MIT license), "inspired-by", explicitly state
+         this is a clean-room implementation and no sshx source was copied.
+      5. Basic project layout (src/, package.json, tsconfig if needed, .gitignore).
+
+      DONE-CRITERIA (all required before you report done):
+      - `bun install && bun run src/server.ts` boots without error and GET /api/agora/health
+        returns 200 JSON locally.
+      - plugin.json is valid JSON and contains all 5 fields above.
+      - README.md's FIRST section (after the title) is the §1 trust model, verbatim points above.
+      - ATTRIBUTION.md exists and names ekzhang/sshx + MIT + inspired-by + clean-room.
+      - Every file ≤250 lines.
+      - Push branch agents/maw-serve-coder-1, open a PR to main, report back to lead with the
+        PR number. Do not merge it yourself.
+
+  - role: coder
+    name: coder-2
+    engine: omx
+    branch: agents/maw-serve-coder-2
+    prompt: |
+      You are coder-2 on the nazt/maw-serve team. WAIT for tasks from the lead via maw hey.
+      Own your loop end to end (read, code, test, report) — do not ask the lead to debug for you.
+
+      TASK A2 — Census SUPERSET schema (design + types, highest-value task — this gets
+      reviewed by agora, the design mentor, before it hardens; do not treat it as throwaway).
+      Repo: /opt/Code/github.com/nazt/maw-serve.
+
+      Goal: define ONE topology TypeScript type that is a SUPERSET able to hold BOTH:
+      (a) `maw census --json` fields (issue #380, owned by maw-rs/wave) — this is the PRIMARY
+          v1 source, REQUIRED fields.
+      (b) display-census's `SpaceReport` px-frame fields — OPTIONAL/nullable fields:
+          fleet[] (title=oracle, space, display, focus), windows[] (id, app, title, frame
+          {x,y,w,h} GLOBAL px, pinned), spaces[] (index, display, isVisible, hasFocus),
+          displays[].
+      This must let display-census slot in LATER with ZERO rewrite of any consumer code —
+      that is the hard constraint (maw-rs ruling). Field list for #380 may not be final yet;
+      if you cannot find the live schema, model your best-effort required fields from what's
+      documented (oracle handle, session/pane id, host/machine, status) and clearly mark them
+      TODO-confirm-with-maw-rs in a comment, don't block on it.
+
+      Also note (§1 trust model, non-negotiable): windows[].title from display-census MUST be
+      redacted before it ever reaches the board UI — do not build the redaction filter itself
+      in this task, but leave a clear TODO/comment marking that field as requiring redaction
+      downstream so nobody forgets.
+
+      Build:
+      1. src/types/census.ts (or similar) — the superset type(s), well-named, with doc-comments
+         explaining which fields are required-now vs optional-future.
+      2. A short markdown doc (docs/census-schema.md or similar) showing: (a) how #380's fields
+         map onto the required fields today, (b) that display-census's px fields are nullable,
+         (c) a one-paragraph argument for why adding display-census later needs no consumer
+         rewrite.
+
+      DONE-CRITERIA:
+      - Type compiles (bun/tsc with no errors).
+      - Doc file exists and covers the 3 points above.
+      - Every file ≤250 lines.
+      - Push branch agents/maw-serve-coder-2, open a PR to main, report back to lead with the
+        PR number AND explicitly flag "needs agora review before hardening" in your report —
+        the lead will route it to agora (99-agora) before merge, do not assume it's mergeable
+        on green CI alone.
+
+  - role: coder
+    name: coder-3
+    engine: omx
+    branch: agents/maw-serve-coder-3
+    prompt: |
+      You are coder-3 on the nazt/maw-serve team. WAIT for tasks from the lead via maw hey.
+      Own your loop end to end (read, code, test, report) — do not ask the lead to debug for you.
+
+      TASK A3 — Consumer clients for already-landed fleet feeds (pure clients only — do NOT
+      mount these into any board/server yet, that comes later once #383/#384 groundwork lands).
+      Repo: /opt/Code/github.com/nazt/maw-serve.
+
+      Build TWO typed clients + smoke tests:
+
+      1. argus client — argus already ships a landed board-tile endpoint:
+         - poll: GET /api/board-tile?window_h=<n> -> { updated_at, window_h,
+           hosts[]{machine,oracles,tokens,messages,burn_per_hr,resets_at},
+           accounts[]{account,rate_5h_pct,rate_5h_resets_at,rate_7d_pct,...},
+           oracles[]{oracle,model,account,machine,rate_5h_pct,rate_7d_pct} }
+         - WS: /api/ws, frames shaped { type: "ingest", at: <epoch_ms>, rows: [...] } — branch
+           on msg.type so future frame types (e.g. "heartbeat") don't break your client.
+         Write a typed fetch wrapper + a WS listener stub, with a smoke test that parses a
+         real or fixture payload matching the shape above.
+
+      2. window-arranger layout-core client — it's a zero-dependency single file at
+         window-arranger-oracle/lib/layout-core.ts (find the actual repo via
+         `ghq list | rg window-arranger` and `git -C <repo> ls-files | rg layout-core` — do
+         not grep the whole ghq root). Import it directly (or vendor-copy the single file with
+         attribution comment if cross-repo import isn't practical) and write a smoke test that
+         calls packItems(outer, count, gap, mode) and asserts it returns an array of
+         {rect, index}, plus one call to renderRectsSVG and assert it returns a non-empty
+         string containing "<svg".
+
+      DONE-CRITERIA:
+      - Both clients have passing smoke tests (bun test or equivalent), run and paste the
+        green output in your report.
+      - No board-mounting code, no new HTTP routes — pure client modules only.
+      - Every file ≤250 lines.
+      - Push branch agents/maw-serve-coder-3, open a PR to main, report back to lead with the
+        PR number.
