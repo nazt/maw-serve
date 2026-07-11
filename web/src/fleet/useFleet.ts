@@ -240,13 +240,19 @@ export function computeAttention(
     if (level === "none") level = "warn";
   }
 
-  if ((rates?.rate5h ?? 0) >= 85) {
-    reasons.push("account 5h near cap (rotate token)");
-    level = "critical";
-  }
-  if ((rates?.rate7d ?? 0) >= 85) {
-    reasons.push("account 7d near cap (rotate token)");
-    level = "critical";
+  for (const [horizon, rate] of [
+    ["5h", rates?.rate5h],
+    ["7d", rates?.rate7d],
+  ] as const) {
+    if (rate === null || rate === undefined) continue;
+
+    if (rate > 80) {
+      reasons.push(`account ${horizon} near cap (rotate token)`);
+      level = "critical";
+    } else if (rate > 50) {
+      reasons.push(`account watch (${horizon} ${rate}%)`);
+      if (level === "none") level = "warn";
+    }
   }
 
   return { level, reasons };
