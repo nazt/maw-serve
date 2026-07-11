@@ -6,25 +6,46 @@
     <meta name="color-scheme" content="dark" />
     <meta
       name="description"
-      content="Stoa live fleet observatory for monitors, spaces, and oracle agents."
+      content="Stoa interactive fleet board for live oracle operations."
     />
-    <title>STOA · fleet observatory</title>
+    <title>STOA · board</title>
     <link rel="stylesheet" href="/api/agora/styles.css" />
-    <script defer src="/api/agora/topology.js"></script>
-    <script defer src="/api/agora/usage.js"></script>
+    <script defer src="/api/agora/canvas.js"></script>
+    <script defer src="/api/agora/tiles.js"></script>
+    <script defer src="/api/agora/fleet.js"></script>
     <script defer src="/api/agora/app.js"></script>
   </head>
   <body>
     <header class="site-header">
-      <h1>STOA <span aria-hidden="true">·</span> fleet observatory</h1>
+      <h1>STOA <span aria-hidden="true">·</span> board</h1>
       <time id="clock" class="live-clock" aria-label="Local time"></time>
     </header>
 
-    <main id="regions" aria-live="polite" aria-busy="true">
-      <p class="board-state board-state--loading" role="status">
+    <div
+      class="fabric"
+      id="fabric"
+      role="region"
+      aria-label="Interactive fleet board"
+      aria-busy="true"
+    >
+      <p class="board-state board-state--loading" id="board-state" role="status">
         Acquiring fleet telemetry…
       </p>
-    </main>
+    </div>
+
+    <div class="toolbar" role="toolbar" aria-label="Board controls">
+      <button id="add-note" type="button">Add note</button>
+      <button id="fit-board" type="button">Fit</button>
+      <output
+        id="zoom-label"
+        class="zoom-label"
+        data-zoom
+        aria-label="Canvas zoom"
+        aria-live="polite"
+      >
+        100%
+      </output>
+    </div>
 
     <footer id="statusbar" aria-live="polite">
       <span class="statusbar-message">Connecting to Stoa…</span>
