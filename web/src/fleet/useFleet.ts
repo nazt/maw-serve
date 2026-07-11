@@ -20,6 +20,12 @@ const GRID_STEP_Y = 130;
 const GRID_COLUMNS = 6;
 
 export type OracleStatus = "active" | "idle" | "stale" | "pinned" | "error";
+export type AttentionLevel = "none" | "warn" | "critical";
+
+export interface OracleAttention {
+  level: AttentionLevel;
+  reasons: string[];
+}
 
 export interface CensusOracle {
   oracle?: string | null;
@@ -49,9 +55,15 @@ export interface UsagePayload {
     burn_per_hr?: number | null;
     tokens?: number | null;
   }> | null;
-  accounts?: Array<Record<string, unknown>> | null;
+  accounts?: Array<{
+    account?: string | null;
+    rate_5h_pct?: number | null;
+    rate_7d_pct?: number | null;
+    [key: string]: unknown;
+  }> | null;
   oracles?: Array<{
     oracle?: string | null;
+    account?: string | null;
     rate_5h_pct?: number | null;
     rate_7d_pct?: number | null;
   }> | null;
@@ -80,6 +92,13 @@ export interface OracleTileItem extends TileGeometry {
   id: string;
   kind: "oracle";
   data: OracleTileData;
+  attention: OracleAttention;
+}
+
+export interface AttentionSummary {
+  count: number;
+  criticalCount: number;
+  list: OracleTileItem[];
 }
 
 export type NoteTileItem = NoteBoardItem;
@@ -146,6 +165,7 @@ export function normalizeOracleHandle(value: unknown): string {
 
 function normalizeStatus(value: unknown): OracleStatus {
   const status = String(value ?? "stale").trim().toLowerCase();
+  if (status === "live") return "active";
   return status in STATUS_ORDER ? (status as OracleStatus) : "stale";
 }
 
@@ -169,16 +189,67 @@ function clampHeat(value: unknown): number | null {
   return Number.isFinite(heat) ? Math.min(100, Math.max(0, heat)) : null;
 }
 
-function buildUsageIndex(usage: UsagePayload | null | undefined): Map<string, number> {
-  const index = new Map<string, number>();
+interface UsageRates {
+  rate5h: number | null;
+  rate7d: number | null;
+}
+
+function buildUsageIndex(usage: UsagePayload | null | undefined): Map<string, UsageRates> {
+  const accounts = new Map<string, UsageRates>();
+  const index = new Map<string, UsageRates>();
+
+  for (const entry of usage?.accounts ?? []) {
+    const account = String(entry?.account ?? "").trim().toLowerCase();
+    if (!account) continue;
+    accounts.set(account, {
+      rate5h: clampHeat(entry?.rate_5h_pct),
+      rate7d: clampHeat(entry?.rate_7d_pct),
+    });
+  }
 
   for (const entry of usage?.oracles ?? []) {
     const handle = normalizeOracleHandle(entry?.oracle);
-    const heat = clampHeat(entry?.rate_5h_pct);
-    if (handle && heat !== null) index.set(handle, heat);
+    if (!handle) continue;
+
+    const account = String(entry?.account ?? "").trim().toLowerCase();
+    const accountRates = accounts.get(account);
+    index.set(handle, {
+      rate5h: accountRates?.rate5h ?? clampHeat(entry?.rate_5h_pct),
+      rate7d: accountRates?.rate7d ?? clampHeat(entry?.rate_7d_pct),
+    });
   }
 
   return index;
+}
+
+export function computeAttention(
+  status: OracleStatus,
+  idleSec: number | null,
+  rates?: UsageRates,
+): OracleAttention {
+  const reasons: string[] = [];
+  let level: AttentionLevel = "none";
+
+  if (status === "error") {
+    reasons.push("error");
+    level = "critical";
+  }
+
+  if (status === "active" && idleSec !== null && idleSec > 900) {
+    reasons.push("stuck");
+    if (level === "none") level = "warn";
+  }
+
+  if ((rates?.rate5h ?? 0) >= 85) {
+    reasons.push("account 5h near cap (rotate token)");
+    level = "critical";
+  }
+  if ((rates?.rate7d ?? 0) >= 85) {
+    reasons.push("account 7d near cap (rotate token)");
+    level = "critical";
+  }
+
+  return { level, reasons };
 }
 
 function flattenCensus(census: CensusPayload | null | undefined): FleetRecord[] {
@@ -226,25 +297,41 @@ export function buildFleetTiles(
   const usageIndex = buildUsageIndex(usage);
   const records = activeRepresentative(flattenCensus(census));
 
-  return records.map((record, index) => ({
-    id: record.handle,
-    kind: "oracle",
-    x: (index % GRID_COLUMNS) * GRID_STEP_X,
-    y: Math.floor(index / GRID_COLUMNS) * GRID_STEP_Y,
-    w: ORACLE_WIDTH,
-    h: ORACLE_HEIGHT,
-    data: {
-      oracle: record.oracle,
-      status: record.status,
-      modelTier: record.modelTier,
-      idleSec: record.idleSec,
-      annotation: record.annotation,
-      heat: usageIndex.get(record.handle) ?? 0,
-      pinned: record.pinned,
-      display: record.display,
-      space: record.space,
-    },
-  }));
+  return records.map((record, index) => {
+    const rates = usageIndex.get(record.handle);
+    return {
+      id: record.handle,
+      kind: "oracle",
+      x: (index % GRID_COLUMNS) * GRID_STEP_X,
+      y: Math.floor(index / GRID_COLUMNS) * GRID_STEP_Y,
+      w: ORACLE_WIDTH,
+      h: ORACLE_HEIGHT,
+      attention: computeAttention(record.status, record.idleSec, rates),
+      data: {
+        oracle: record.oracle,
+        status: record.status,
+        modelTier: record.modelTier,
+        idleSec: record.idleSec,
+        annotation: record.annotation,
+        heat: rates?.rate5h ?? 0,
+        pinned: record.pinned,
+        display: record.display,
+        space: record.space,
+      },
+    };
+  });
+}
+
+export function summarizeAttention(tiles: readonly FleetTileItem[]): AttentionSummary {
+  const list = tiles.filter((tile): tile is OracleTileItem => (
+    tile.kind === "oracle" && tile.attention.level !== "none"
+  ));
+
+  return {
+    count: list.length,
+    criticalCount: list.filter((tile) => tile.attention.level === "critical").length,
+    list,
+  };
 }
 
 function finiteGeometry(value: unknown, fallback: number): number {
