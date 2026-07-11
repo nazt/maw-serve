@@ -36,6 +36,8 @@ export default {
     "animate-breathe",
     "animate-enter",
     "animate-starfield",
+    "animate-hint-in",
+    "animate-hint-out",
     "fabric",
     "tile",
     "oracle-tile",
@@ -53,6 +55,13 @@ export default {
     "heat-ring-warm",
     "heat-ring-hot",
     "heat-ring-pinned",
+    "status-legend",
+    "status-legend__item",
+    "status-legend__dot",
+    "board-hint",
+    "board-hint__dismiss",
+    "oracle-meta",
+    "terminal-connector",
   ],
   theme: {
     extend: {
@@ -126,11 +135,33 @@ export default {
             transform: "translate3d(64px, 48px, 0)",
           },
         },
+        "hint-in": {
+          from: {
+            opacity: "0",
+            transform: "translateY(-5px) scale(0.985)",
+          },
+          to: {
+            opacity: "1",
+            transform: "translateY(0) scale(1)",
+          },
+        },
+        "hint-out": {
+          from: {
+            opacity: "1",
+            transform: "translateY(0) scale(1)",
+          },
+          to: {
+            opacity: "0",
+            transform: "translateY(-4px) scale(0.99)",
+          },
+        },
       },
       animation: {
         breathe: "breathe 3s var(--ease-out-expo) infinite",
         enter: "enter 460ms var(--ease-out-expo) backwards",
         starfield: "starfield 56s linear infinite",
+        "hint-in": "hint-in 420ms var(--ease-out-expo) backwards",
+        "hint-out": "hint-out 240ms var(--ease-out-expo) forwards",
       },
     },
   },
