@@ -40,12 +40,17 @@ export type UseCanvasOptions = {
   fitPadding?: number;
 };
 
+export type FocusOptions = {
+  zoom?: number;
+};
+
 export type CanvasController = CanvasView & {
   anchor: CanvasCenter;
   fabricRef: RefObject<HTMLDivElement | null>;
   screenToWorld: (point: PointInput | number, y?: number) => CanvasPoint;
   worldToScreen: (point: PointInput | number, y?: number) => CanvasPoint;
   fit: (rects?: Iterable<WorldRect>) => void;
+  focusOn: (rect: WorldRect, options?: FocusOptions) => void;
   onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onPointerUp: (event: ReactPointerEvent<HTMLDivElement>) => void;
@@ -65,6 +70,11 @@ type PanState = {
 
 const clamp = (value: number, minimum: number, maximum: number) =>
   Math.min(maximum, Math.max(minimum, value));
+
+const FOCUS_DURATION_MS = 350;
+
+const easeOutExpo = (progress: number) =>
+  progress >= 1 ? 1 : 1 - 2 ** (-10 * progress);
 
 const finite = (value: unknown, fallback = 0) => {
   const number = Number(value);
@@ -125,6 +135,7 @@ export function useCanvas(options: UseCanvasOptions = {}): CanvasController {
   const fabricRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<MutableView>(initialView);
   const panRef = useRef<PanState | null>(null);
+  const animationRef = useRef<number | null>(null);
   const [view, setView] = useState<MutableView>(initialView);
 
   const commitView = useCallback((update: (current: MutableView) => MutableView) => {
@@ -132,6 +143,18 @@ export function useCanvas(options: UseCanvasOptions = {}): CanvasController {
     viewRef.current = next;
     setView(next);
   }, []);
+
+  const cancelFocusAnimation = useCallback(() => {
+    if (animationRef.current === null) return;
+
+    const frameWindow =
+      fabricRef.current?.ownerDocument.defaultView ??
+      (typeof window === "undefined" ? null : window);
+    frameWindow?.cancelAnimationFrame(animationRef.current);
+    animationRef.current = null;
+  }, []);
+
+  useEffect(() => () => cancelFocusAnimation(), [cancelFocusAnimation]);
 
   const baseOffset = useCallback((): CanvasPoint => {
     const viewport = viewportSize(fabricRef.current);
@@ -172,6 +195,7 @@ export function useCanvas(options: UseCanvasOptions = {}): CanvasController {
   const handleWheel = useCallback(
     (event: WheelEvent) => {
       event.preventDefault();
+      cancelFocusAnimation();
 
       if (event.ctrlKey || event.metaKey) {
         commitView((current) => {
@@ -204,7 +228,7 @@ export function useCanvas(options: UseCanvasOptions = {}): CanvasController {
         zoom: current.zoom,
       }));
     },
-    [commitView],
+    [cancelFocusAnimation, commitView],
   );
 
   useEffect(() => {
@@ -215,18 +239,22 @@ export function useCanvas(options: UseCanvasOptions = {}): CanvasController {
     return () => fabric.removeEventListener("wheel", handleWheel);
   }, [handleWheel]);
 
-  const onPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.target !== event.currentTarget || event.button !== 0) return;
+  const onPointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.target !== event.currentTarget || event.button !== 0) return;
 
-    blurFocusedInput(fabricRef.current);
-    panRef.current = {
-      pointerId: event.pointerId,
-      x: event.clientX,
-      y: event.clientY,
-    };
-    event.currentTarget.setPointerCapture(event.pointerId);
-    event.preventDefault();
-  }, []);
+      cancelFocusAnimation();
+      blurFocusedInput(fabricRef.current);
+      panRef.current = {
+        pointerId: event.pointerId,
+        x: event.clientX,
+        y: event.clientY,
+      };
+      event.currentTarget.setPointerCapture(event.pointerId);
+      event.preventDefault();
+    },
+    [cancelFocusAnimation],
+  );
 
   const onPointerMove = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -261,6 +289,8 @@ export function useCanvas(options: UseCanvasOptions = {}): CanvasController {
 
   const fit = useCallback(
     (rects?: Iterable<WorldRect>) => {
+      cancelFocusAnimation();
+
       const bounds = {
         minX: Infinity,
         minY: Infinity,
@@ -317,7 +347,79 @@ export function useCanvas(options: UseCanvasOptions = {}): CanvasController {
         zoom: nextZoom,
       }));
     },
-    [anchor, commitView, fitPadding],
+    [anchor, cancelFocusAnimation, commitView, fitPadding],
+  );
+
+  const focusOn = useCallback(
+    (rect: WorldRect, focusOptions: FocusOptions = {}) => {
+      if (![rect.x, rect.y, rect.w, rect.h].every(Number.isFinite) || rect.w < 0 || rect.h < 0) {
+        return;
+      }
+
+      cancelFocusAnimation();
+
+      const fabric = fabricRef.current;
+      const frameWindow = fabric?.ownerDocument.defaultView;
+      const viewport = viewportSize(fabric);
+      const width = Math.max(1, rect.w);
+      const height = Math.max(1, rect.h);
+      const frameZoom = clamp(
+        Math.min(
+          Math.max(1, viewport.x - fitPadding * 2) / width,
+          Math.max(1, viewport.y - fitPadding * 2) / height,
+        ),
+        MIN_CANVAS_ZOOM,
+        MAX_CANVAS_ZOOM,
+      );
+      const targetZoom = clamp(
+        finite(focusOptions.zoom, frameZoom),
+        MIN_CANVAS_ZOOM,
+        MAX_CANVAS_ZOOM,
+      );
+      const midpointX = rect.x + rect.w / 2;
+      const midpointY = rect.y + rect.h / 2;
+      const target: MutableView = {
+        center: [
+          midpointX + viewport.x / 2 - anchor[0] - viewport.x / (2 * targetZoom),
+          midpointY + viewport.y / 2 - anchor[1] - viewport.y / (2 * targetZoom),
+        ],
+        zoom: targetZoom,
+      };
+
+      const reducedMotion = frameWindow?.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+      if (reducedMotion || !frameWindow?.requestAnimationFrame) {
+        commitView(() => target);
+        return;
+      }
+
+      const start: MutableView = {
+        center: [...viewRef.current.center],
+        zoom: viewRef.current.zoom,
+      };
+      const startedAt = frameWindow.performance.now();
+
+      const animate = (timestamp: number) => {
+        const progress = clamp((timestamp - startedAt) / FOCUS_DURATION_MS, 0, 1);
+        const eased = easeOutExpo(progress);
+
+        commitView(() => ({
+          center: [
+            start.center[0] + (target.center[0] - start.center[0]) * eased,
+            start.center[1] + (target.center[1] - start.center[1]) * eased,
+          ],
+          zoom: start.zoom + (target.zoom - start.zoom) * eased,
+        }));
+
+        if (progress < 1) {
+          animationRef.current = frameWindow.requestAnimationFrame(animate);
+        } else {
+          animationRef.current = null;
+        }
+      };
+
+      animationRef.current = frameWindow.requestAnimationFrame(animate);
+    },
+    [anchor, cancelFocusAnimation, commitView, fitPadding],
   );
 
   return useMemo(
@@ -329,11 +431,22 @@ export function useCanvas(options: UseCanvasOptions = {}): CanvasController {
       screenToWorld,
       worldToScreen,
       fit,
+      focusOn,
       onPointerDown,
       onPointerMove,
       onPointerUp: endPan,
       onPointerCancel: endPan,
     }),
-    [anchor, endPan, fit, onPointerDown, onPointerMove, screenToWorld, view, worldToScreen],
+    [
+      anchor,
+      endPan,
+      fit,
+      focusOn,
+      onPointerDown,
+      onPointerMove,
+      screenToWorld,
+      view,
+      worldToScreen,
+    ],
   );
 }
