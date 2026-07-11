@@ -3,6 +3,7 @@ import { handleRequest } from "../server";
 
 async function bodyAndType(pathname: string) {
   const res = await handleRequest(new Request(`http://localhost${pathname}`));
+  if (!res) throw new Error("expected HTTP response");
   return { res, body: await res.text(), type: res.headers.get("content-type") ?? "" };
 }
 
