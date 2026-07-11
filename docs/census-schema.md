@@ -7,9 +7,10 @@ future display-census fields are optional and nullable.
 ## Required-now mapping from `maw census --json` (#380)
 
 Issue #380's live JSON schema was not reachable from this worktree, so the v1
-required row is intentionally best-effort and marked `TODO-confirm-with-maw-rs`
-in the type file. The board normalizes the required `maw census --json` fields
-into `StoaCensusOracle` like this:
+required row is intentionally best-effort and marked `MAW-RS-RECONCILE` in the
+type file. The field names below must be reconciled with maw-rs when the live
+census schema ships; names may change. The board normalizes the required
+`maw census --json` fields into `StoaCensusOracle` like this:
 
 | #380 / maw census concept | `StoaCensusOracle` field | Required today |
 | --- | --- | --- |
@@ -32,8 +33,8 @@ These fields on `StoaFleetTopology` are therefore optional and nullable:
 - `fleet?: StoaDisplayCensusFleetRow[] | null` — oracle labels by
   `title`, `space`, `display`, and `focus`, with optional pass-through metadata
   when display-census provides it.
-- `windows?: StoaDisplayCensusWindow[] | null` — window `id`, `app`, redaction-
-  sensitive `title`, optional space/display/focus indexes, optional global-pixel
+- `windows?: StoaDisplayCensusWindow[] | null` — window `id`, `app`, structurally
+  redacted `title`, optional space/display/focus indexes, optional global-pixel
   `frame`, and optional `pinned` state.
 - `spaces?: StoaDisplayCensusSpace[] | null` — space index, display index,
   visibility, focus, and optional pin state.
@@ -43,6 +44,11 @@ These fields on `StoaFleetTopology` are therefore optional and nullable:
 Window frames are stored in global pixel coordinates so a later topology tile can
 render display → spaces → window frames without throwing away window-arranger
 layout data.
+
+`windows[].title` is a branded `RedactedTitle`, not a plain `string`. A raw
+display-census title cannot satisfy the type, so a renderer cannot receive
+unredacted window titles unless a future redaction filter explicitly mints the
+opaque value.
 
 ## Why display-census can slot in later without rewrites
 

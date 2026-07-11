@@ -29,12 +29,26 @@ export type StoaFleetTopology = {
   displays?: StoaDisplayCensusDisplay[] | null;
 };
 
+declare const redactedTitleBrand: unique symbol;
+
+/**
+ * Opaque title string that has already passed the required redaction filter.
+ *
+ * Raw display-census window titles are not assignable to this brand, so render
+ * paths cannot accept unredacted titles by accident. The future redaction filter
+ * is the only layer that should mint this type.
+ */
+export type RedactedTitle = string & {
+  readonly [redactedTitleBrand]: "RedactedTitle";
+};
+
 /**
  * Required-now `maw census --json` oracle row.
  *
- * TODO-confirm-with-maw-rs (#380): the live schema was not reachable while this
- * type was authored, so these fields model the required best-effort contract:
- * oracle handle, session/pane identifiers, host/machine, and status.
+ * MAW-RS-RECONCILE (#380): reconcile these best-effort field names with maw-rs
+ * when the live census schema ships. The required concepts are oracle handle,
+ * session/pane identifiers, host/machine, and status, but the exact JSON names
+ * may change.
  */
 export type StoaCensusOracle = {
   /** Oracle handle, e.g. the maw oracle name shown on the board tile. */
@@ -96,11 +110,8 @@ export type StoaDisplayCensusWindow = {
   display?: number | null;
   focus?: boolean | null;
 
-  /**
-   * TODO(redaction): display-census window titles can expose work content and
-   * must be redacted before this value reaches any board UI renderer.
-   */
-  title: string;
+  /** Redacted-only window title; raw display-census strings cannot assign here. */
+  title: RedactedTitle;
 
   /** Global screen pixel frame. Nullable for legacy or not-yet-populated rows. */
   frame: StoaGlobalPixelFrame | null;
