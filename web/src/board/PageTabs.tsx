@@ -27,7 +27,9 @@ export default function PageTabs({
 }: PageTabsProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const [edgeFade, setEdgeFade] = useState<"none" | "start" | "end" | "both">("none");
   const inputRef = useRef<HTMLInputElement>(null);
+  const tabListRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef(new Map<string, HTMLAnchorElement>());
 
   useEffect(() => {
@@ -47,6 +49,39 @@ export default function PageTabs({
     });
     return () => window.cancelAnimationFrame(frame);
   }, [activePageId]);
+
+  useEffect(() => {
+    const tabList = tabListRef.current;
+    if (!tabList) return;
+
+    const updateEdgeFade = () => {
+      const hasOverflow = tabList.scrollWidth > tabList.clientWidth + 1;
+      const canScrollStart = hasOverflow && tabList.scrollLeft > 1;
+      const canScrollEnd = hasOverflow
+        && tabList.scrollLeft + tabList.clientWidth < tabList.scrollWidth - 1;
+      setEdgeFade(
+        canScrollStart && canScrollEnd
+          ? "both"
+          : canScrollStart
+            ? "start"
+            : canScrollEnd
+              ? "end"
+              : "none",
+      );
+    };
+
+    updateEdgeFade();
+    const frame = window.requestAnimationFrame(updateEdgeFade);
+    const observer = new ResizeObserver(updateEdgeFade);
+    observer.observe(tabList);
+    tabList.addEventListener("scroll", updateEdgeFade, { passive: true });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer.disconnect();
+      tabList.removeEventListener("scroll", updateEdgeFade);
+    };
+  }, [pages]);
 
   const beginRename = (page: BoardPage) => {
     setDraft(page.name);
@@ -96,10 +131,12 @@ export default function PageTabs({
       aria-label="Board pages"
     >
       <div
-        className="flex min-w-0 max-w-[min(70vw,52rem)] items-center gap-0.5 overflow-x-auto"
+        ref={tabListRef}
+        className="page-tabs__list flex min-w-0 max-w-[min(70vw,52rem)] items-center gap-0.5 overflow-x-auto"
         role="tablist"
         aria-label="Board pages"
         aria-orientation="horizontal"
+        data-edge-fade={edgeFade}
       >
         {pages.map((page, pageIndex) => {
           const active = page.id === activePageId;
