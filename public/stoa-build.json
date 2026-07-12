@@ -1,6 +1,6 @@
 {
-  "branch": "agents/stoa-space-expand",
-  "commit": "753ddba",
-  "builder": "stoa-topo",
-  "buildTime": "2026-07-12T08:56:10.003Z"
+  "branch": "agents/stoa-term-metrics",
+  "commit": "0d457f8",
+  "builder": "stoa-server",
+  "buildTime": "2026-07-12T11:00:22.726Z"
 }

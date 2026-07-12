@@ -3,10 +3,15 @@ export interface TerminalSourceDimensions {
   rows: number;
 }
 
+export interface TerminalCellMetrics {
+  width: number;
+  height: number;
+  fontSize: number;
+}
+
 export const MIN_TERMINAL_FONT_SIZE = 6;
 export const MAX_TERMINAL_FONT_SIZE = 40;
-export const TERMINAL_CHAR_WIDTH_RATIO = 0.6;
-export const TERMINAL_LINE_HEIGHT_RATIO = 1.25;
+export const TERMINAL_LINE_HEIGHT_RATIO = 1.3;
 export const MIN_TERMINAL_ZOOM = 0.5;
 export const MAX_TERMINAL_ZOOM = 3;
 export const DEFAULT_TERMINAL_ZOOM = 1;
@@ -20,6 +25,12 @@ export interface TerminalDisplayGrid {
 
 function validDimension(value: unknown): value is number {
   return Number.isInteger(value) && Number(value) >= 1 && Number(value) <= 1_000;
+}
+
+function validCellMetrics(metrics: TerminalCellMetrics): boolean {
+  return [metrics.width, metrics.height, metrics.fontSize].every(
+    (value) => Number.isFinite(value) && value > 0,
+  );
 }
 
 export function parseTerminalMeta(data: string): TerminalSourceDimensions | null {
@@ -37,8 +48,8 @@ export function parseTerminalMeta(data: string): TerminalSourceDimensions | null
 export function terminalFontSize(
   contentWidth: number,
   cols: number,
+  cellMetrics: TerminalCellMetrics,
   zoomFactor = DEFAULT_TERMINAL_ZOOM,
-  charWidthRatio = TERMINAL_CHAR_WIDTH_RATIO,
 ): number {
   if (
     !Number.isFinite(contentWidth) ||
@@ -46,12 +57,14 @@ export function terminalFontSize(
     !validDimension(cols) ||
     !Number.isFinite(zoomFactor) ||
     zoomFactor <= 0 ||
-    !Number.isFinite(charWidthRatio) ||
-    charWidthRatio <= 0
+    !validCellMetrics(cellMetrics)
   ) {
     return MIN_TERMINAL_FONT_SIZE;
   }
-  const fitFont = contentWidth / (cols * charWidthRatio);
+  // Preserve xterm's rendered glyph aspect instead of assuming a monospace
+  // width ratio. The measured cell already includes the active font stack and
+  // device-pixel rounding.
+  const fitFont = cellMetrics.fontSize * contentWidth / (cols * cellMetrics.width);
   const scaled = fitFont * zoomFactor;
   const clamped = Math.min(
     MAX_TERMINAL_FONT_SIZE,
@@ -63,32 +76,35 @@ export function terminalFontSize(
 export function terminalRows(
   contentHeight: number,
   fontSize: number,
-  lineHeightRatio = TERMINAL_LINE_HEIGHT_RATIO,
+  cellMetrics: TerminalCellMetrics,
 ): number {
   if (
     !Number.isFinite(contentHeight) ||
     contentHeight <= 0 ||
     !Number.isFinite(fontSize) ||
     fontSize <= 0 ||
-    !Number.isFinite(lineHeightRatio) ||
-    lineHeightRatio <= 0
+    !validCellMetrics(cellMetrics)
   ) {
     return 1;
   }
-  return Math.max(1, Math.floor(contentHeight / (fontSize * lineHeightRatio)));
+  // The measured height includes xterm's configured lineHeight, so Thai
+  // leading and the display-row calculation cannot drift apart.
+  const scaledCellHeight = cellMetrics.height * fontSize / cellMetrics.fontSize;
+  return Math.max(1, Math.floor(contentHeight / scaledCellHeight));
 }
 
 export function terminalDisplayGrid(
   contentWidth: number,
   contentHeight: number,
   sourceCols: number,
+  cellMetrics: TerminalCellMetrics,
   zoomFactor = DEFAULT_TERMINAL_ZOOM,
 ): TerminalDisplayGrid {
   const cols = validDimension(sourceCols) ? sourceCols : 1;
-  const fontSize = terminalFontSize(contentWidth, cols, zoomFactor);
+  const fontSize = terminalFontSize(contentWidth, cols, cellMetrics, zoomFactor);
   return {
     cols,
-    rows: terminalRows(contentHeight, fontSize),
+    rows: terminalRows(contentHeight, fontSize, cellMetrics),
     fontSize,
   };
 }

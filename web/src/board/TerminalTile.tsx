@@ -9,10 +9,12 @@ import {
   DEFAULT_TERMINAL_ZOOM,
   MAX_TERMINAL_ZOOM,
   MIN_TERMINAL_ZOOM,
+  TERMINAL_LINE_HEIGHT_RATIO,
   parseTerminalMeta,
   parseTerminalZoom,
   stepTerminalZoom,
   terminalDisplayGrid,
+  type TerminalCellMetrics,
   type TerminalSourceDimensions,
 } from "./terminalSizing";
 
@@ -153,6 +155,31 @@ function fleetTerminalTheme(): ITheme {
   return theme;
 }
 
+function renderedCellMetrics(terminal: Terminal): TerminalCellMetrics | null {
+  const screen = terminal.element?.querySelector<HTMLElement>(".xterm-screen");
+  const screenWidth = Number.parseFloat(screen?.style.width ?? "");
+  const screenHeight = Number.parseFloat(screen?.style.height ?? "");
+  const fontSize = terminal.options.fontSize ?? 0;
+  if (
+    !screen ||
+    !Number.isFinite(screenWidth) ||
+    screenWidth <= 0 ||
+    !Number.isFinite(screenHeight) ||
+    screenHeight <= 0 ||
+    !Number.isFinite(fontSize) ||
+    fontSize <= 0 ||
+    terminal.cols <= 0 ||
+    terminal.rows <= 0
+  ) {
+    return null;
+  }
+  return {
+    width: screenWidth / terminal.cols,
+    height: screenHeight / terminal.rows,
+    fontSize,
+  };
+}
+
 function lineCount(text: string): number {
   return text.split("\n").length - 1;
 }
@@ -240,7 +267,7 @@ export function TerminalTile({
       cursorBlink: !reducedMotion.matches,
       fontFamily: 'ui-monospace, "JetBrains Mono", monospace',
       fontSize: 11,
-      lineHeight: 1.25,
+      lineHeight: TERMINAL_LINE_HEIGHT_RATIO,
       minimumContrastRatio: 4.5,
       screenReaderMode: true,
       scrollback: 4_000,
@@ -328,6 +355,12 @@ export function TerminalTile({
       const shouldFollow = following;
       try {
         if (sourceDimensions) {
+          const cellMetrics = renderedCellMetrics(terminal);
+          if (!cellMetrics) {
+            fitAddon.fit();
+            window.requestAnimationFrame(resizeTerminal);
+            return;
+          }
           const viewport = host.querySelector<HTMLElement>(".xterm-viewport");
           const scrollbarWidth = viewport
             ? Math.max(0, host.clientWidth - viewport.clientWidth)
@@ -337,6 +370,7 @@ export function TerminalTile({
             fitWidth,
             frame.clientHeight,
             sourceDimensions.cols,
+            cellMetrics,
             zoomFactorRef.current,
           );
           const expandedWidth = zoomFactorRef.current > 1
@@ -347,7 +381,10 @@ export function TerminalTile({
           host.dataset.sourceRows = String(sourceDimensions.rows);
           host.dataset.terminalFontSize = String(grid.fontSize);
           host.dataset.terminalZoom = String(zoomFactorRef.current);
-          if (terminal.options.fontSize !== grid.fontSize) {
+          host.dataset.measuredCellWidth = String(cellMetrics.width);
+          host.dataset.measuredCellHeight = String(cellMetrics.height);
+          const fontChanged = Math.abs((terminal.options.fontSize ?? 0) - grid.fontSize) > 0.05;
+          if (fontChanged) {
             terminal.options.fontSize = grid.fontSize;
           }
           // FitAddon measures xterm's real rendered cell height, which includes
@@ -361,6 +398,7 @@ export function TerminalTile({
           if (terminal.cols !== grid.cols || terminal.rows !== displayRows) {
             terminal.resize(grid.cols, displayRows);
           }
+          if (fontChanged) window.requestAnimationFrame(resizeTerminal);
         } else {
           fitAddon.fit();
         }
