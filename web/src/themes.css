@@ -1,0 +1,140 @@
+:root,
+:root[data-theme="plain"] {
+  color-scheme: dark;
+
+  --bg-channels: 0.15 0.02 220;
+  --surface-channels: 0.19 0.02 220;
+  --surface-2-channels: 0.23 0.02 220;
+  --line-channels: 0.3 0.02 220;
+  --note-surface-channels: 0.29 0.055 75;
+  --terminal-surface-channels: 0.115 0.018 220;
+  --terminal-header-channels: 0.17 0.02 220;
+
+  --ink-channels: 0.96 0 0;
+  --ink-dim-channels: 0.76 0 0;
+  --ink-faint-channels: 0.68 0 0;
+  --ink-inverse-channels: 0.15 0 0;
+
+  --active-channels: 0.85 0.19 155;
+  --idle-channels: 0.8 0.1 210;
+  --stale-channels: 0.55 0.03 230;
+  --pinned-channels: 0.82 0.16 75;
+  --error-channels: 0.68 0.2 25;
+  --heat-track-channels: 0.3 0.02 220;
+  --heat-track-alpha: 0.72;
+  --star-primary-channels: var(--ink-channels);
+  --star-secondary-channels: var(--idle-channels);
+
+  --terminal-ansi-black-channels: var(--bg-channels);
+  --terminal-ansi-white-channels: var(--ink-dim-channels);
+  --terminal-ansi-bright-white-channels: var(--ink-channels);
+
+  --active-glow: oklch(var(--active-channels) / 0.3);
+  --idle-glow: oklch(var(--idle-channels) / 0.2);
+  --stale-glow: oklch(var(--stale-channels) / 0.1);
+  --pinned-glow: oklch(var(--pinned-channels) / 0.3);
+  --error-glow: oklch(var(--error-channels) / 0.32);
+  --attention-warn-glow: oklch(var(--pinned-channels) / 0.46);
+  --attention-critical-glow: oklch(var(--error-channels) / 0.56);
+  --active-breathe-low: oklch(var(--active-channels) / 0.18);
+  --active-breathe-high: oklch(var(--active-channels) / 0.38);
+  --heat-cool-glow: oklch(var(--active-channels) / 0.28);
+  --heat-warm-glow: oklch(var(--pinned-channels) / 0.34);
+  --heat-hot-glow: oklch(var(--error-channels) / 0.4);
+  --elevation-shadow: oklch(0.05 0 0 / 0.52);
+  --stale-tile-opacity: 0.7;
+  --tile-hover-brightness: 1.06;
+  --tile-hover-saturation: 1.1;
+  --starfield-opacity: 0.2;
+  --stargrid-opacity: 0.12;
+}
+
+:root[data-theme="phosphor"] {
+  color-scheme: dark;
+
+  --bg-channels: 0.115 0.03 165;
+  --surface-channels: 0.165 0.035 165;
+  --surface-2-channels: 0.215 0.045 160;
+  --line-channels: 0.5 0.13 155;
+  --note-surface-channels: 0.285 0.07 75;
+  --terminal-surface-channels: 0.09 0.025 165;
+  --terminal-header-channels: 0.14 0.04 165;
+
+  /* Text remains achromatic: phosphor is signal and atmosphere, never ink. */
+  --ink-channels: 0.96 0 0;
+  --ink-dim-channels: 0.76 0 0;
+  --ink-faint-channels: 0.68 0 0;
+  --ink-inverse-channels: 0.12 0 0;
+
+  --active-channels: 0.88 0.23 150;
+  --idle-channels: 0.8 0.13 195;
+  --stale-channels: 0.58 0.055 165;
+  --pinned-channels: 0.84 0.17 75;
+  --error-channels: 0.7 0.21 25;
+  --heat-track-channels: 0.35 0.07 160;
+  --heat-track-alpha: 0.82;
+  --star-primary-channels: var(--active-channels);
+  --star-secondary-channels: var(--idle-channels);
+
+  --terminal-ansi-black-channels: var(--bg-channels);
+  --terminal-ansi-white-channels: var(--ink-dim-channels);
+  --terminal-ansi-bright-white-channels: var(--ink-channels);
+
+  --active-glow: oklch(var(--active-channels) / 0.46);
+  --idle-glow: oklch(var(--idle-channels) / 0.3);
+  --stale-glow: oklch(var(--stale-channels) / 0.16);
+  --pinned-glow: oklch(var(--pinned-channels) / 0.38);
+  --error-glow: oklch(var(--error-channels) / 0.4);
+  --attention-warn-glow: oklch(var(--pinned-channels) / 0.58);
+  --attention-critical-glow: oklch(var(--error-channels) / 0.66);
+  --active-breathe-low: oklch(var(--active-channels) / 0.3);
+  --active-breathe-high: oklch(var(--active-channels) / 0.56);
+  --heat-cool-glow: oklch(var(--active-channels) / 0.42);
+  --heat-warm-glow: oklch(var(--pinned-channels) / 0.44);
+  --heat-hot-glow: oklch(var(--error-channels) / 0.5);
+  --elevation-shadow: oklch(0.03 0 0 / 0.64);
+  --stale-tile-opacity: 0.74;
+  --tile-hover-brightness: 1.08;
+  --tile-hover-saturation: 1.18;
+  --starfield-opacity: 0.32;
+  --stargrid-opacity: 0.18;
+}
+
+:root {
+  --attention-warn-channels: var(--pinned-channels);
+  --attention-critical-channels: var(--error-channels);
+  --heat-cool-channels: var(--active-channels);
+  --heat-warm-channels: var(--pinned-channels);
+  --heat-hot-channels: var(--error-channels);
+
+  --bg: oklch(var(--bg-channels));
+  --surface: oklch(var(--surface-channels));
+  --surface-2: oklch(var(--surface-2-channels));
+  --line: oklch(var(--line-channels));
+  --note-surface: oklch(var(--note-surface-channels));
+  --terminal-surface: oklch(var(--terminal-surface-channels));
+  --terminal-header: oklch(var(--terminal-header-channels));
+
+  --ink: oklch(var(--ink-channels));
+  --ink-dim: oklch(var(--ink-dim-channels));
+  --ink-faint: oklch(var(--ink-faint-channels));
+  --ink-inverse: oklch(var(--ink-inverse-channels));
+
+  --active: oklch(var(--active-channels));
+  --idle: oklch(var(--idle-channels));
+  --stale: oklch(var(--stale-channels));
+  --pinned: oklch(var(--pinned-channels));
+  --error: oklch(var(--error-channels));
+  --attention-warn: oklch(var(--attention-warn-channels));
+  --attention-critical: oklch(var(--attention-critical-channels));
+  --heat-cool: oklch(var(--heat-cool-channels));
+  --heat-warm: oklch(var(--heat-warm-channels));
+  --heat-hot: oklch(var(--heat-hot-channels));
+  --heat-track: oklch(var(--heat-track-channels) / var(--heat-track-alpha));
+
+  --terminal-ansi-black: oklch(var(--terminal-ansi-black-channels));
+  --terminal-ansi-white: oklch(var(--terminal-ansi-white-channels));
+  --terminal-ansi-bright-white: oklch(
+    var(--terminal-ansi-bright-white-channels)
+  );
+}

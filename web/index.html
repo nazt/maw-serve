@@ -9,6 +9,16 @@
       content="Stoa interactive fleet board for live oracle operations."
     />
     <title>STOA · board</title>
+    <script>
+      (() => {
+        const key = "stoa-theme";
+        let saved = null;
+        try { saved = localStorage.getItem(key); } catch {}
+        const theme = saved === "phosphor" ? "phosphor" : "plain";
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.style.colorScheme = "dark";
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

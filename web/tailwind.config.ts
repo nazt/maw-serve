@@ -131,10 +131,10 @@ export default {
       keyframes: {
         breathe: {
           "0%, 100%": {
-            boxShadow: "0 0 5px 0 oklch(var(--active-channels) / 0.18)",
+            boxShadow: "0 0 5px 0 var(--active-breathe-low)",
           },
           "50%": {
-            boxShadow: "0 0 12px 1px oklch(var(--active-channels) / 0.38)",
+            boxShadow: "0 0 12px 1px var(--active-breathe-high)",
           },
         },
         enter: {

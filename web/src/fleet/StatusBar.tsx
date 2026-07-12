@@ -1,12 +1,15 @@
 import { useEffect, useState } from "react";
 
 import { activeHost, apiFetch, API_ENDPOINTS } from "../clients/api";
+import type { Theme } from "../theme";
 import type { FleetTileItem, UsagePayload } from "./useFleet";
 
 export interface StatusBarProps {
   items: FleetTileItem[];
   usage: UsagePayload | null;
   error?: Error | null;
+  theme: Theme;
+  onToggleTheme: () => void;
   className?: string;
 }
 
@@ -68,7 +71,14 @@ function Metric({ label, value }: MetricProps) {
   );
 }
 
-export function StatusBar({ items, usage, error = null, className = "" }: StatusBarProps) {
+export function StatusBar({
+  items,
+  usage,
+  error = null,
+  theme,
+  onToggleTheme,
+  className = "",
+}: StatusBarProps) {
   const summary = summarizeFleet(items, usage);
   const [serverBuild, setServerBuild] = useState<ServerBuildIdentity | null>(null);
   useEffect(() => {
@@ -100,6 +110,7 @@ export function StatusBar({ items, usage, error = null, className = "" }: Status
   const label = error
     ? "Fleet telemetry link interrupted"
     : `Fleet status: ${summary.active} active, ${summary.idle} idle, ${summary.stale} stale, ${summary.burnPerHour} tokens per hour, ${summary.accounts} accounts`;
+  const nextTheme = theme === "plain" ? "phosphor" : "plain";
 
   return (
     <footer
@@ -126,6 +137,17 @@ export function StatusBar({ items, usage, error = null, className = "" }: Status
           </>
         )}
       </div>
+      <button
+        type="button"
+        className="inline-flex h-6 shrink-0 items-center gap-1.5 rounded border border-[var(--line)] bg-[var(--surface-2)] px-2 font-mono text-[10px] font-semibold leading-none text-[var(--ink-dim)] transition-colors duration-150 hover:text-[var(--ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--idle)] motion-reduce:transition-none"
+        aria-label={`Switch to ${nextTheme} mode`}
+        title={`Current mode: ${theme}. Switch to ${nextTheme}.`}
+        data-theme-toggle={theme}
+        onClick={onToggleTheme}
+      >
+        <span className="h-1.5 w-1.5 rounded-full bg-[var(--active)] shadow-[0_0_5px_var(--active-glow)]" aria-hidden="true" />
+        <span>{theme}</span>
+      </button>
       <span
         className="max-w-[48vw] shrink-0 truncate rounded border border-[var(--line)] px-1.5 py-0.5 font-mono text-[11px] leading-none tabular-nums text-[var(--ink-faint)]"
         title={`${buildLabel} · UI built ${__STOA_BUILD__.buildTime}${serverBuild ? ` · data built ${serverBuild.buildTime}` : ""}`}
