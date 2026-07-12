@@ -648,6 +648,7 @@ export default function CommandPalette({
         ref={launcherRef}
         type="button"
         className="palette-launcher"
+        aria-label="Search fleet targets"
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-keyshortcuts="Meta+K Control+K Meta+P Control+P"
