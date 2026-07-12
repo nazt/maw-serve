@@ -32,6 +32,9 @@ export interface TerminalTileItem {
   w: number;
   h: number;
   zIndex?: number;
+  groupId?: string;
+  streamEligible?: boolean;
+  streamPriority?: number;
   data: {
     oracle: string;
     session: string;
@@ -45,6 +48,7 @@ export interface TerminalTileProps {
   onClose?: (id: string) => void;
   theme: Theme;
   pollIntervalMs?: number;
+  onTransportModeChange?: (id: string, mode: StreamLeaseMode) => void;
   streamEligible?: boolean;
   streamLane?: StreamLeaseLane;
   streamPriority?: number;
@@ -204,6 +208,7 @@ export function TerminalTile({
   onClose,
   theme,
   pollIntervalMs = 2_000,
+  onTransportModeChange,
   streamEligible = true,
   streamLane = "working",
   streamPriority = STREAM_PRIORITY.normal,
@@ -223,6 +228,10 @@ export function TerminalTile({
   const resumeFollowRef = useRef<() => void>(() => {});
   const selecting = selectMode || temporarySelect;
   const zoomPercent = Math.round(zoomFactor * 100);
+
+  useEffect(() => {
+    onTransportModeChange?.(item.id, transportMode);
+  }, [item.id, onTransportModeChange, transportMode]);
 
   useEffect(() => {
     if (!streamEligible) {

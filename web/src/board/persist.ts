@@ -154,13 +154,19 @@ function boardItem(value: unknown): PersistedBoardItem | null {
 
   if (candidate.kind === "space-import") {
     const spaceRef = candidate.spaceRef as Record<string, unknown> | null;
+    const expandedSize = candidate.expandedSize as Record<string, unknown> | null;
     if (
       typeof candidate.groupId !== "string" ||
       !spaceRef ||
       !Number.isInteger(spaceRef.displayIndex) ||
       !Number.isInteger(spaceRef.spaceIndex) ||
       !Array.isArray(candidate.members) ||
-      typeof candidate.collapsed !== "boolean"
+      typeof candidate.collapsed !== "boolean" ||
+      !expandedSize ||
+      !finite(expandedSize.w) ||
+      !finite(expandedSize.h) ||
+      expandedSize.w <= 0 ||
+      expandedSize.h <= 0
     ) {
       return null;
     }
@@ -169,6 +175,9 @@ function boardItem(value: unknown): PersistedBoardItem | null {
       if (!value || typeof value !== "object") return [];
       const member = value as Record<string, unknown>;
       const memberGeometry = geometry(member.geometry);
+      const adoptedGeometry = member.adoptedGeometry
+        ? geometry(member.adoptedGeometry)
+        : null;
       const target = member.target as Record<string, unknown> | null;
       if (
         typeof member.id !== "string" ||
@@ -206,6 +215,7 @@ function boardItem(value: unknown): PersistedBoardItem | null {
         ...(typeof member.adoptedItemId === "string"
           ? { adoptedItemId: member.adoptedItemId }
           : {}),
+        ...(adoptedGeometry ? { adoptedGeometry } : {}),
       }];
     });
     if (members.length !== candidate.members.length) return null;
@@ -222,6 +232,10 @@ function boardItem(value: unknown): PersistedBoardItem | null {
       },
       members,
       collapsed: candidate.collapsed,
+      expandedSize: {
+        w: expandedSize.w,
+        h: expandedSize.h,
+      },
     };
   }
 
@@ -239,6 +253,13 @@ function boardItem(value: unknown): PersistedBoardItem | null {
       id: candidate.id,
       kind: "terminal",
       ...itemGeometry,
+      ...(typeof candidate.groupId === "string" ? { groupId: candidate.groupId } : {}),
+      ...(typeof candidate.streamEligible === "boolean"
+        ? { streamEligible: candidate.streamEligible }
+        : {}),
+      ...(finite(candidate.streamPriority)
+        ? { streamPriority: candidate.streamPriority }
+        : {}),
       data: {
         oracle: data.oracle,
         session: data.session,

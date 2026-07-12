@@ -42,6 +42,7 @@ export interface SpaceImportMember {
     model?: string;
   } | null;
   adoptedItemId?: string;
+  adoptedGeometry?: BoardItemGeometry;
 }
 
 /** Descriptor-only: terminal frames are always fetched live and never stored. */
@@ -53,6 +54,7 @@ export interface SpaceImportBoardItem extends BoardItemGeometry {
   spaceRef: SpaceReference;
   members: SpaceImportMember[];
   collapsed: boolean;
+  expandedSize: { w: number; h: number };
 }
 
 export interface ImageBoardData {
