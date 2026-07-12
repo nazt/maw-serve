@@ -206,16 +206,11 @@
     cursor: grab;
     transition:
       transform 140ms var(--ease-out-expo),
-      translate 180ms var(--ease-out-expo),
       background-color 180ms var(--ease-out-expo),
       border-color 180ms var(--ease-out-expo),
       box-shadow 180ms var(--ease-out-expo),
       filter 180ms var(--ease-out-expo),
       opacity 180ms var(--ease-out-expo);
-  }
-
-  .tile:not(.is-dragging):not(.is-resizing):hover {
-    translate: 0 -2px;
   }
 
   .tile.is-dragging,
@@ -234,18 +229,6 @@
 
     border: 1px solid var(--tile-status);
     box-shadow: 0 0 7px 0 var(--tile-glow);
-    transition:
-      transform 140ms var(--ease-out-expo),
-      translate 180ms var(--ease-out-expo),
-      background-color 180ms var(--ease-out-expo),
-      border-color 180ms var(--ease-out-expo),
-      box-shadow 180ms var(--ease-out-expo),
-      filter 180ms var(--ease-out-expo),
-      opacity 180ms var(--ease-out-expo);
-  }
-
-  .tile-glow:hover {
-    box-shadow: 0 0 14px 1px var(--tile-glow);
   }
 
   .tile-glow-active,
@@ -271,11 +254,6 @@
     filter: saturate(0.45);
   }
 
-  .tile-glow-stale:hover,
-  .tile-glow[data-status="stale"]:hover {
-    opacity: 0.82;
-  }
-
   .tile-glow-pinned,
   .tile-glow[data-status="pinned"],
   .tile-glow[data-pinned="true"] {
@@ -298,6 +276,8 @@
     --attention-channels: var(--attention-warn-channels);
     --attention-status: var(--attention-warn);
     --attention-glow: var(--attention-warn-glow);
+    --tile-status: var(--attention-status);
+    --tile-glow: var(--attention-glow);
     --attention-ring-alpha: 0.72;
     --attention-blur: 10px;
     --attention-spread: 1px;
@@ -349,6 +329,19 @@
     font-weight: 900;
     line-height: 1;
     pointer-events: none;
+  }
+
+  /* Light moves; tile position stays fixed under every hover state. */
+  .tile-glow:hover {
+    border-color: color-mix(
+      in oklch,
+      var(--tile-status) 86%,
+      var(--ink) 14%
+    );
+    box-shadow: 0 0 19px 2px var(--tile-glow);
+    filter: brightness(1.06) saturate(1.1)
+      drop-shadow(0 0 5px var(--tile-glow));
+    opacity: 1;
   }
 
   /* Apply to tile content, not the transform-positioned tile wrapper. */
@@ -547,18 +540,14 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     opacity: 0;
-    translate: 0 3px;
     pointer-events: none;
-    transition:
-      opacity 180ms var(--ease-out-expo),
-      translate 180ms var(--ease-out-expo);
+    transition: opacity 180ms var(--ease-out-expo);
   }
 
   .tile:hover .oracle-meta,
   .tile:focus-within .oracle-meta,
   .oracle-tile:hover .oracle-meta {
     opacity: 0.82;
-    translate: 0 0;
   }
 
   /* Optional shell geometry: oracle-to-terminal relationship, never decoration. */
@@ -637,11 +626,6 @@
     transform: translate3d(0, 0, 0);
   }
 
-  .tile,
-  .tile:hover {
-    translate: none;
-  }
-
   .heat-ring {
     transition: none;
   }
@@ -653,7 +637,6 @@
   }
 
   .oracle-meta {
-    translate: none;
     transition: none;
   }
 
