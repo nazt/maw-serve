@@ -42,6 +42,11 @@ function serveIndex(): Response {
   return fileResponse("/api/agora/index.html", `${PUBLIC_DIR}/index.html`);
 }
 
+function wantsApiRepresentation(req: Request): boolean {
+  const accept = req.headers.get("accept")?.toLowerCase() ?? "";
+  return accept.includes("text/event-stream") || accept.includes("application/json");
+}
+
 export async function handleRequest(req: Request): Promise<Response> {
   const url = new URL(req.url);
   if (url.pathname === "/health") {
@@ -51,6 +56,9 @@ export async function handleRequest(req: Request): Promise<Response> {
   if (url.pathname === "/api/agora" || url.pathname === "/api/agora/") return serveIndex();
   if (url.pathname.startsWith("/api/agora/") && /\.[^/]+$/.test(url.pathname)) {
     return servePublicAsset(url.pathname);
+  }
+  if (url.pathname.startsWith("/api/agora/") && wantsApiRepresentation(req)) {
+    return Response.json({ error: "api route not found" }, { status: 404 });
   }
   if (url.pathname.startsWith("/api/agora/")) return serveIndex();
 

@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test";
 import { resolveBoardTelemetryState } from "../web/src/fleet/boardState";
-import { terminalHealth } from "../web/src/board/terminalHealth";
+import {
+  summarizeTerminalConnections,
+  terminalHealth,
+} from "../web/src/board/terminalHealth";
 import { resolveFleetRefresh } from "../web/src/fleet/useFleet";
 
 test("board telemetry states distinguish loading, failure, and a confirmed empty fleet", () => {
@@ -42,14 +45,31 @@ test("terminal health marks transport failures as degraded and retryable", () =>
     retryable: false,
   });
   expect(terminalHealth("polling", "Live stream unavailable; using snapshots")).toEqual({
-    degraded: true,
-    label: "degraded · polling",
-    retryable: true,
+    degraded: false,
+    label: "polling (fallback)",
+    retryable: false,
   });
   expect(terminalHealth("error", "Terminal snapshots unavailable")).toEqual({
     degraded: true,
     label: "degraded · unavailable",
     retryable: true,
+  });
+});
+
+test("space group counts use terminal connection states instead of stream leases", () => {
+  expect(summarizeTerminalConnections([
+    { status: "live", degraded: false },
+    { status: "polling", degraded: false },
+    { status: "reconnecting", degraded: true },
+    { status: "error", degraded: true },
+    null,
+  ])).toEqual({
+    live: 1,
+    polling: 1,
+    connecting: 1,
+    reconnecting: 1,
+    error: 1,
+    degraded: 2,
   });
 });
 

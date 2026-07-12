@@ -49,6 +49,7 @@ export interface UseDragOptions<Item extends TileItem> {
   minWidth?: number;
   minHeight?: number;
   aspectRatio?: number | null;
+  aspectRatioLock?: "default" | "shift";
   onChange?: (item: Item, kind: TileChangeKind) => void;
   onCommit?: (item: Item, kind: TileChangeKind) => void;
 }
@@ -104,12 +105,22 @@ type ResizeInteraction = {
   startWidth: number;
   startHeight: number;
   aspectRatio: number | null;
+  aspectRatioLock: "default" | "shift";
   moved: boolean;
 };
 
 type Interaction = PendingDrag | DragInteraction | ResizeInteraction;
 
 type SnapDelta = { delta: number; guide: number } | null;
+
+export function shouldLockAspectRatio(
+  aspectRatio: number | null,
+  shiftKey: boolean,
+  mode: "default" | "shift" = "default",
+): boolean {
+  if (!aspectRatio) return false;
+  return mode === "shift" ? shiftKey : !shiftKey;
+}
 
 function finite(value: unknown, fallback = 0): number {
   const number = Number(value);
@@ -345,6 +356,7 @@ export function useDrag<Item extends TileItem>({
   minWidth = MIN_TILE_WIDTH,
   minHeight = MIN_TILE_HEIGHT,
   aspectRatio = null,
+  aspectRatioLock = "default",
   onChange,
   onCommit,
 }: UseDragOptions<Item>): UseDragResult {
@@ -430,11 +442,15 @@ export function useDrag<Item extends TileItem>({
     interaction.moved = true;
     userResizedRef.current = true;
 
-    if (interaction.aspectRatio && !pointer.shiftKey) {
+    if (shouldLockAspectRatio(
+      interaction.aspectRatio,
+      pointer.shiftKey,
+      interaction.aspectRatioLock,
+    )) {
       const widthScaleDelta = deltaX / Math.max(1, interaction.startWidth);
       const heightScaleDelta = deltaY / Math.max(1, interaction.startHeight);
       const widthDominant = Math.abs(widthScaleDelta) >= Math.abs(heightScaleDelta);
-      const ratio = interaction.aspectRatio;
+      const ratio = interaction.aspectRatio!;
       let width: number;
       let height: number;
       let nextGuides: SnapGuide[];
@@ -589,10 +605,11 @@ export function useDrag<Item extends TileItem>({
       aspectRatio: Number.isFinite(Number(aspectRatio)) && Number(aspectRatio) > 0
         ? Number(aspectRatio)
         : null,
+      aspectRatioLock,
       moved: false,
     };
     setActiveMode("resize");
-  }, [aspectRatio, clearInteraction]);
+  }, [aspectRatio, aspectRatioLock, clearInteraction]);
 
   const onPointerMove = useCallback<PointerEventHandler<HTMLElement>>((event) => {
     const interaction = interactionRef.current;

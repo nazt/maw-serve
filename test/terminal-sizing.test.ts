@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 
 import {
   DEFAULT_TERMINAL_ZOOM,
+  DEFAULT_TERMINAL_FONT_SIZE,
   MAX_TERMINAL_FONT_SIZE,
   MAX_TERMINAL_ZOOM,
   MIN_TERMINAL_FONT_SIZE,
@@ -13,6 +14,7 @@ import {
   terminalDisplayGrid,
   terminalFontSize,
   terminalRows,
+  terminalTileSize,
 } from "../web/src/board/terminalSizing";
 
 const CELL_METRICS = { width: 6, height: 12.5, fontSize: 10 };
@@ -25,14 +27,45 @@ test("terminal metadata accepts bounded source pane dimensions", () => {
   expect(parseTerminalMeta("not json")).toBeNull();
 });
 
-test("terminal font fits source columns, applies zoom, and clamps at readable bounds", () => {
+test("terminal font stays readable, applies zoom, and only shrinks to the readable floor", () => {
   expect(terminalFontSize(480, 80, CELL_METRICS)).toBe(10);
-  expect(terminalFontSize(1_200, 80, CELL_METRICS)).toBe(25);
+  expect(terminalFontSize(1_200, 80, CELL_METRICS)).toBe(DEFAULT_TERMINAL_FONT_SIZE);
   expect(terminalFontSize(480, 80, CELL_METRICS, 1.5)).toBe(15);
   expect(terminalFontSize(100, 80, CELL_METRICS)).toBe(MIN_TERMINAL_FONT_SIZE);
-  expect(terminalFontSize(2_000, 80, CELL_METRICS)).toBe(MAX_TERMINAL_FONT_SIZE);
+  expect(terminalFontSize(2_000, 80, CELL_METRICS)).toBe(DEFAULT_TERMINAL_FONT_SIZE);
+  expect(terminalFontSize(2_000, 80, CELL_METRICS, 5)).toBe(MAX_TERMINAL_FONT_SIZE);
   expect(terminalFontSize(480, 0, CELL_METRICS)).toBe(MIN_TERMINAL_FONT_SIZE);
   expect(terminalFontSize(Number.NaN, 80, CELL_METRICS)).toBe(MIN_TERMINAL_FONT_SIZE);
+});
+
+test("source dimensions recommend a readable tile and clamp it to the viewport", () => {
+  expect(terminalTileSize(
+    { cols: 80, rows: 24 },
+    CELL_METRICS,
+    24,
+    68,
+    1_000,
+    800,
+  )).toEqual({
+    w: 552,
+    h: 398,
+    clampedWidth: false,
+    clampedHeight: false,
+  });
+
+  expect(terminalTileSize(
+    { cols: 220, rows: 80 },
+    CELL_METRICS,
+    24,
+    68,
+    1_000,
+    700,
+  )).toEqual({
+    w: 1_000,
+    h: 700,
+    clampedWidth: true,
+    clampedHeight: true,
+  });
 });
 
 test("display rows follow tile height instead of source pane rows", () => {
