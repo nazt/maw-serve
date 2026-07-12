@@ -20,8 +20,15 @@ const STREAM_REPLAY_EVENTS = 256;
 const STREAM_REPLAY_BYTES = 512 * 1024;
 const STREAM_CLEAR = "\u001b[2J\u001b[H";
 const CORS_ALLOWLIST_ENV = "MAW_SERVE_CORS_ORIGINS";
-const CORS_METHODS = "GET, OPTIONS";
-const CORS_HEADERS = "Accept, Cache-Control, Last-Event-ID";
+const READ_CORS_METHODS = "GET, OPTIONS";
+const READ_CORS_HEADERS = "Accept, Cache-Control, Last-Event-ID";
+const LINK_PATH = "/api/agora/link";
+const LINK_CORS_METHODS = "POST, OPTIONS";
+const LINK_CORS_HEADERS = "Content-Type";
+const LINK_BODY_MAX_BYTES = 4_096;
+const LINK_RATE_WINDOW_MS = 60_000;
+const LINK_RATE_DEBOUNCE_MS = 1_500;
+const LINK_RATE_MAX_PER_WINDOW = 10;
 
 const CONTENT_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -119,13 +126,16 @@ function preflightResponse(req: Request): Response {
   }
 
   const requestedMethod = req.headers.get("access-control-request-method")?.toUpperCase() ?? "GET";
-  if (requestedMethod !== "GET") {
-    return withCors(req, new Response(null, { status: 405, headers: { allow: CORS_METHODS } }));
+  const isLinkRequest = new URL(req.url).pathname === LINK_PATH;
+  const allowedMethod = isLinkRequest ? "POST" : "GET";
+  const allowedMethods = isLinkRequest ? LINK_CORS_METHODS : READ_CORS_METHODS;
+  if (requestedMethod !== allowedMethod) {
+    return withCors(req, new Response(null, { status: 405, headers: { allow: allowedMethods } }));
   }
 
   const headers = new Headers({
-    "access-control-allow-methods": CORS_METHODS,
-    "access-control-allow-headers": CORS_HEADERS,
+    "access-control-allow-methods": allowedMethods,
+    "access-control-allow-headers": isLinkRequest ? LINK_CORS_HEADERS : READ_CORS_HEADERS,
     "access-control-allow-private-network": "true",
     "access-control-max-age": "600",
   });
@@ -227,7 +237,7 @@ async function versionResponse(): Promise<Response> {
   );
 }
 
-async function censusResponse(): Promise<Response> {
+async function readCensus(): Promise<unknown> {
   const process = Bun.spawn(["maw", "census", "--json"], {
     stdout: "pipe",
     stderr: "pipe",
@@ -239,16 +249,225 @@ async function censusResponse(): Promise<Response> {
   ]);
 
   if (exitCode !== 0) {
-    console.error(`maw census failed (${exitCode}): ${stderr.trim()}`);
-    return Response.json({ error: "census unavailable" }, { status: 502 });
+    throw new Error(stderr.trim() || `maw census exited with code ${exitCode}`);
   }
 
   try {
-    return Response.json(JSON.parse(stdout), { headers: { "cache-control": "no-store" } });
-  } catch (error) {
-    console.error("maw census returned invalid JSON", error);
-    return Response.json({ error: "census returned invalid JSON" }, { status: 502 });
+    return JSON.parse(stdout);
+  } catch {
+    throw new Error("maw census returned invalid JSON");
   }
+}
+
+async function censusResponse(): Promise<Response> {
+  try {
+    return Response.json(await readCensus(), { headers: { "cache-control": "no-store" } });
+  } catch (error) {
+    console.error("maw census failed", error);
+    return Response.json({ error: "census unavailable" }, { status: 502 });
+  }
+}
+
+type BoardLinkAction = "connect" | "disconnect";
+
+interface BoardLinkPayload {
+  from: string;
+  to: string;
+  action: BoardLinkAction;
+}
+
+interface BoardLinkRateResult {
+  ok: boolean;
+  retryAfterMs: number;
+}
+
+export class BoardLinkRateLimiter {
+  private readonly attempts = new Map<string, number[]>();
+
+  constructor(
+    private readonly windowMs = LINK_RATE_WINDOW_MS,
+    private readonly debounceMs = LINK_RATE_DEBOUNCE_MS,
+    private readonly maxPerWindow = LINK_RATE_MAX_PER_WINDOW,
+  ) {}
+
+  take(from: string, to: string, now = Date.now()): BoardLinkRateResult {
+    const key = [from, to].sort().join("\0");
+    const cutoff = now - this.windowMs;
+    const recent = (this.attempts.get(key) ?? []).filter((at) => at > cutoff && at <= now);
+    const last = recent.at(-1);
+
+    if (last !== undefined && now - last < this.debounceMs) {
+      this.attempts.set(key, recent);
+      return { ok: false, retryAfterMs: this.debounceMs - (now - last) };
+    }
+    if (recent.length >= this.maxPerWindow) {
+      this.attempts.set(key, recent);
+      return { ok: false, retryAfterMs: Math.max(1, recent[0] + this.windowMs - now) };
+    }
+
+    recent.push(now);
+    this.attempts.set(key, recent);
+    return { ok: true, retryAfterMs: 0 };
+  }
+}
+
+type BoardHeyCommandRunner = (
+  argv: string[],
+) => Promise<{ exitCode: number; stderr: string }>;
+
+async function runBoardHeyCommand(argv: string[]): Promise<{ exitCode: number; stderr: string }> {
+  const child = Bun.spawn(argv, { stdout: "ignore", stderr: "pipe" });
+  const [stderr, exitCode] = await Promise.all([
+    new Response(child.stderr).text(),
+    child.exited,
+  ]);
+  return { exitCode, stderr };
+}
+
+export async function sendBoardHey(
+  target: string,
+  message: string,
+  runCommand: BoardHeyCommandRunner = runBoardHeyCommand,
+): Promise<void> {
+  const { exitCode, stderr } = await runCommand(["maw", "hey", target, message]);
+  if (exitCode !== 0) {
+    throw new Error(stderr.trim() || `maw hey exited with code ${exitCode}`);
+  }
+}
+
+interface BoardLinkDependencies {
+  census?: () => Promise<unknown>;
+  limiter?: BoardLinkRateLimiter;
+  now?: () => number;
+  sendHey?: (target: string, message: string) => Promise<void>;
+  logger?: Pick<Console, "info" | "error">;
+}
+
+const boardLinkRateLimiter = new BoardLinkRateLimiter();
+
+function validBoardOracleName(value: string): boolean {
+  return value.length >= 1 && value.length <= 128 && /^[\w.-]+$/.test(value);
+}
+
+function parseBoardLinkPayload(value: unknown): BoardLinkPayload | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const keys = Object.keys(record).sort();
+  if (keys.join(",") !== "action,from,to") return null;
+  if (typeof record.from !== "string" || typeof record.to !== "string") return null;
+  if (record.action !== "connect" && record.action !== "disconnect") return null;
+  if (!validBoardOracleName(record.from) || !validBoardOracleName(record.to)) return null;
+  if (record.from === record.to) return null;
+  return { from: record.from, to: record.to, action: record.action };
+}
+
+function censusOracleNames(value: unknown): Set<string> {
+  const names = new Set<string>();
+  if (!value || typeof value !== "object") return names;
+  const displays = (value as { displays?: unknown }).displays;
+  if (!Array.isArray(displays)) return names;
+
+  for (const display of displays) {
+    if (!display || typeof display !== "object") continue;
+    const spaces = (display as { spaces?: unknown }).spaces;
+    if (!Array.isArray(spaces)) continue;
+    for (const space of spaces) {
+      if (!space || typeof space !== "object") continue;
+      const oracles = (space as { oracles?: unknown }).oracles;
+      if (!Array.isArray(oracles)) continue;
+      for (const oracle of oracles) {
+        if (!oracle || typeof oracle !== "object") continue;
+        const name = (oracle as { oracle?: unknown }).oracle;
+        if (typeof name === "string" && validBoardOracleName(name)) names.add(name);
+      }
+    }
+  }
+  return names;
+}
+
+function boardLinkMessages(payload: BoardLinkPayload): Array<{ target: string; message: string }> {
+  if (payload.action === "connect") {
+    return [
+      {
+        target: payload.to,
+        message: `🔗 [board] ${payload.from} เชื่อมต่อมาหาคุณบนบอร์ด — มาทำงานด้วยกันนะ 🐾`,
+      },
+      {
+        target: payload.from,
+        message: `🔗 [board] คุณเชื่อมกับ ${payload.to} แล้ว 🐾`,
+      },
+    ];
+  }
+  const message = `🔌 [board] ${payload.from} ↔ ${payload.to} ถอดการเชื่อมต่อแล้ว`;
+  return [
+    { target: payload.to, message },
+    { target: payload.from, message },
+  ];
+}
+
+export async function linkResponse(
+  req: Request,
+  dependencies: BoardLinkDependencies = {},
+): Promise<Response> {
+  const contentType = req.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase();
+  if (contentType !== "application/json") {
+    return Response.json({ error: "content-type must be application/json" }, { status: 415 });
+  }
+
+  const declaredLength = Number(req.headers.get("content-length") ?? 0);
+  if (Number.isFinite(declaredLength) && declaredLength > LINK_BODY_MAX_BYTES) {
+    return Response.json({ error: "request body too large" }, { status: 413 });
+  }
+  const body = await req.text();
+  if (textEncoder.encode(body).byteLength > LINK_BODY_MAX_BYTES) {
+    return Response.json({ error: "request body too large" }, { status: 413 });
+  }
+
+  let payload: BoardLinkPayload | null = null;
+  try {
+    payload = parseBoardLinkPayload(JSON.parse(body));
+  } catch {
+    // Invalid JSON and invalid shapes share the same non-reflective response.
+  }
+  if (!payload) {
+    return Response.json({ error: "body must contain only from, to, and a valid action" }, { status: 400 });
+  }
+
+  let names: Set<string>;
+  try {
+    names = censusOracleNames(await (dependencies.census ?? readCensus)());
+  } catch (error) {
+    (dependencies.logger ?? console).error("[board-link] census lookup failed", error);
+    return Response.json({ error: "census unavailable" }, { status: 502 });
+  }
+  if (!names.has(payload.from) || !names.has(payload.to)) {
+    return Response.json({ error: "from and to must be current census oracle names" }, { status: 400 });
+  }
+
+  const limiter = dependencies.limiter ?? boardLinkRateLimiter;
+  const rate = limiter.take(payload.from, payload.to, (dependencies.now ?? Date.now)());
+  if (!rate.ok) {
+    return Response.json(
+      { error: "link notification rate limit exceeded" },
+      { status: 429, headers: { "retry-after": String(Math.max(1, Math.ceil(rate.retryAfterMs / 1_000))) } },
+    );
+  }
+
+  const sendHey = dependencies.sendHey ?? sendBoardHey;
+  const logger = dependencies.logger ?? console;
+  const notifications = boardLinkMessages(payload);
+  const results = await Promise.allSettled(notifications.map(async ({ target, message }) => {
+    await sendHey(target, message);
+    logger.info(`[board-link] ${payload.action} ${payload.from} ↔ ${payload.to}; notified ${target}`);
+    return target;
+  }));
+  const sent = results.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
+  const failures = results.filter((result) => result.status === "rejected");
+  if (failures.length > 0) {
+    for (const failure of failures) logger.error("[board-link] maw hey failed", failure.reason);
+    return Response.json({ ok: false, sent }, { status: 502 });
+  }
+  return Response.json({ ok: true, sent });
 }
 
 async function fetchUsage(): Promise<unknown> {
@@ -784,14 +1003,62 @@ function streamResponse(req: Request, url: URL): Response {
   return new Response(stream, { headers: STREAM_HEADERS });
 }
 
-export async function handleRequest(req: Request): Promise<Response> {
+interface RequestIpProvider {
+  requestIP(req: Request): { address: string } | null;
+}
+
+function isLoopbackAddress(address: string): boolean {
+  const normalized = address.toLowerCase().replace(/^\[|\]$/g, "");
+  if (normalized === "::1" || normalized === "0:0:0:0:0:0:0:1") return true;
+  const ipv4 = normalized.startsWith("::ffff:") ? normalized.slice(7) : normalized;
+  return /^127(?:\.\d{1,3}){3}$/.test(ipv4);
+}
+
+function isLocalWriteRequest(req: Request, server?: RequestIpProvider): boolean {
+  if (server) {
+    const peer = server.requestIP(req);
+    return peer ? isLoopbackAddress(peer.address) : false;
+  }
+  return isLoopbackAddress(new URL(req.url).hostname) || new URL(req.url).hostname === "localhost";
+}
+
+function isTrustedWriteOrigin(req: Request): boolean {
+  const rawOrigin = req.headers.get("origin");
+  if (!rawOrigin) return true;
+  try {
+    if (new URL(rawOrigin).origin === new URL(req.url).origin) return true;
+  } catch {
+    return false;
+  }
+  return allowedCorsOrigin(req) !== null;
+}
+
+export async function handleRequest(
+  req: Request,
+  server?: RequestIpProvider,
+  linkDependencies?: BoardLinkDependencies,
+): Promise<Response> {
   const url = new URL(req.url);
   if (req.method === "OPTIONS") return preflightResponse(req);
   const respond = (response: Response) => withCors(req, response);
+
+  if (url.pathname === LINK_PATH) {
+    if (req.method !== "POST") {
+      return respond(new Response("method not allowed", {
+        status: 405,
+        headers: { allow: LINK_CORS_METHODS },
+      }));
+    }
+    if (!isLocalWriteRequest(req, server) || !isTrustedWriteOrigin(req)) {
+      return respond(Response.json({ error: "link writes are local and origin-restricted" }, { status: 403 }));
+    }
+    return respond(await linkResponse(req, linkDependencies));
+  }
+
   if (req.method !== "GET") {
     return respond(new Response("method not allowed", {
       status: 405,
-      headers: { allow: CORS_METHODS },
+      headers: { allow: READ_CORS_METHODS },
     }));
   }
 
@@ -816,6 +1083,6 @@ export async function handleRequest(req: Request): Promise<Response> {
 }
 
 if (import.meta.main) {
-  Bun.serve({ port: PORT, fetch: handleRequest });
+  Bun.serve({ port: PORT, fetch: (req, server) => handleRequest(req, server) });
   console.log(`maw-serve demo board listening on :${PORT} (routes under /api/agora)`);
 }
