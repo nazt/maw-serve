@@ -30,7 +30,15 @@ import {
   type BoardItem,
   type BoardPoint,
   type NoteBoardItem,
+  type SpaceImportBoardItem,
 } from "./board/boardItems";
+import SpaceImportGroup from "./board/SpaceImportGroup";
+import {
+  SPACE_GROUP_HEADER_HEIGHT,
+  SPACE_IMPORT_EVENT,
+  createSpaceImportPlan,
+  type SpaceImportRequestDetail,
+} from "./board/spaceImport";
 import {
   clearBoardState,
   loadBoardState,
@@ -57,6 +65,7 @@ import {
 import TerminalTile, {
   type TerminalTileItem,
 } from "./board/TerminalTile";
+import type { StreamLeaseMode } from "./board/streamLease";
 import OracleTileContent from "./fleet/OracleTileContent";
 import StatusBar, { summarizeFleet } from "./fleet/StatusBar";
 import type { Theme } from "./theme";
@@ -79,10 +88,15 @@ import {
   spacePageId,
 } from "./mirror/model";
 import { useMirrorOracleModels, useMirrorReport, useOraclePulse } from "./mirror/useMirror";
+import type { MirrorReport } from "./mirror/types";
 
 type AppTileItem = FleetTileItem | TerminalTileItem;
 type UserBoardItem = BoardItem | TerminalTileItem;
 type HintState = "visible" | "leaving";
+type SpaceImportUndo = {
+  groupId: string;
+  adopted: TerminalTileItem[];
+};
 type OraclePress = {
   oracle: OracleTileItem;
   pointerId: number;
@@ -239,6 +253,32 @@ interface BoardItemContentProps {
 function BoardItemContent({ item, onNoteChange, onClose }: BoardItemContentProps) {
   if (item.kind === "note") {
     return <NoteTileContent item={item} onChange={onNoteChange} />;
+  }
+
+  if (item.kind === "space-import") {
+    return (
+      <section className="flex h-full flex-col overflow-hidden rounded-md border border-[var(--line)] bg-[var(--surface)] font-mono">
+        <header className="flex h-9 items-center gap-2 border-b border-[var(--line)] px-2.5 text-xs">
+          <strong className="min-w-0 flex-1 truncate">
+            space {item.spaceRef.spaceIndex}
+          </strong>
+          <span className="text-[10px] text-[var(--ink-dim)]">
+            {item.members.length} windows
+          </span>
+          <button
+            type="button"
+            className="grid h-6 w-6 place-items-center rounded text-[var(--ink-dim)] hover:bg-[var(--surface-2)] hover:text-[var(--ink)]"
+            aria-label={`Remove imported space ${item.spaceRef.spaceIndex}`}
+            onClick={() => onClose(item.id)}
+          >
+            ×
+          </button>
+        </header>
+        <div className="grid min-h-0 flex-1 place-items-center text-[10px] text-[var(--ink-faint)]">
+          space import descriptor
+        </div>
+      </section>
+    );
   }
 
   return (
@@ -552,6 +592,10 @@ function tileClassName(item: AppTileItem): string {
     return "rounded-md bg-[var(--terminal-surface)]";
   }
 
+  if (item.kind === "space-import") {
+    return "rounded-md bg-[var(--surface)]";
+  }
+
   return [
     "rounded-md",
     "bg-[var(--surface)]",
@@ -563,6 +607,19 @@ function tileClassName(item: AppTileItem): string {
 function finiteIdle(value: number | null | undefined): number {
   const idle = Number(value);
   return Number.isFinite(idle) && idle >= 0 ? idle : Number.POSITIVE_INFINITY;
+}
+
+function overlaps(
+  left: Pick<PersistedGeometry, "x" | "y" | "w" | "h">,
+  right: Pick<PersistedGeometry, "x" | "y" | "w" | "h">,
+  gap = 18,
+): boolean {
+  return !(
+    left.x + left.w + gap <= right.x ||
+    right.x + right.w + gap <= left.x ||
+    left.y + left.h + gap <= right.y ||
+    right.y + right.h + gap <= left.y
+  );
 }
 
 function idleDetail(value: number | null): string {
@@ -623,6 +680,8 @@ interface BoardPageViewProps {
   onRenamePage: (pageId: string, name: string) => void;
   onDeletePage: (pageId: string) => void;
   oracleDisplayPages: ReadonlyMap<string, string>;
+  mirrorReport: MirrorReport | null;
+  modelByOracle: ReadonlyMap<string, string>;
   theme: Theme;
   onToggleTheme: () => void;
 }
@@ -635,6 +694,8 @@ function BoardPageView({
   onRenamePage,
   onDeletePage,
   oracleDisplayPages,
+  mirrorReport,
+  modelByOracle,
   theme,
   onToggleTheme,
 }: BoardPageViewProps) {
@@ -675,6 +736,14 @@ function BoardPageView({
   const [terminalTiles, setTerminalTiles] = useState<TerminalTileItem[]>(() => (
     restoredItems.filter((item): item is TerminalTileItem => item.kind === "terminal")
   ));
+  const [terminalModes, setTerminalModes] = useState<Record<string, StreamLeaseMode>>({});
+  const spaceImportUndoRef = useRef<SpaceImportUndo | null>(null);
+  const spaceGroupsRef = useRef<SpaceImportBoardItem[]>([]);
+  const terminalTilesRef = useRef(terminalTiles);
+  terminalTilesRef.current = terminalTiles;
+  spaceGroupsRef.current = boardItems.filter(
+    (item): item is SpaceImportBoardItem => item.kind === "space-import",
+  );
   const initialFitComplete = useRef(restoredState.restored);
   const positionedFleetTiles = useMemo<OracleTileItem[]>(() => (
     fleetTiles.map((item) => ({ ...item, ...fleetGeometry[item.id] }))
@@ -706,9 +775,17 @@ function BoardPageView({
     () => [...positionedFleetTiles, ...boardItems],
     [boardItems, positionedFleetTiles],
   );
+  const collapsedGroupIds = useMemo(() => new Set(
+    boardItems.flatMap((item) => (
+      item.kind === "space-import" && item.collapsed ? [item.groupId] : []
+    )),
+  ), [boardItems]);
+  const visibleTerminalTiles = useMemo(() => terminalTiles.filter((item) => (
+    !item.groupId || !collapsedGroupIds.has(item.groupId)
+  )), [collapsedGroupIds, terminalTiles]);
   const allTiles = useMemo<AppTileItem[]>(
-    () => [...statusTiles, ...terminalTiles],
-    [statusTiles, terminalTiles],
+    () => [...statusTiles, ...visibleTerminalTiles],
+    [statusTiles, visibleTerminalTiles],
   );
   const totals = useMemo(() => summarizeFleet(statusTiles, usage), [statusTiles, usage]);
   const hasOracleTiles = positionedFleetTiles.length > 0;
@@ -799,14 +876,125 @@ function BoardPageView({
     return topZRef.current;
   }, []);
 
+  const groupLanding = useCallback((w: number, h: number) => {
+    const center = viewportCenter();
+    const occupied = allTiles;
+    for (let step = 0; step < 18; step += 1) {
+      const ring = Math.floor((step + 3) / 4);
+      const direction = step % 4;
+      const dx = direction === 0 ? ring : direction === 2 ? -ring : 0;
+      const dy = direction === 1 ? ring : direction === 3 ? -ring : 0;
+      const candidate = {
+        x: Math.round(center.x - w / 2 + dx * 48),
+        y: Math.round(center.y - h / 2 + dy * 48),
+        w,
+        h,
+      };
+      if (!occupied.some((item) => overlaps(candidate, item))) return candidate;
+    }
+    const cascade = spaceGroupsRef.current.length * 32;
+    return {
+      x: Math.round(center.x - w / 2 + cascade),
+      y: Math.round(center.y - h / 2 + cascade),
+      w,
+      h,
+    };
+  }, [allTiles, viewportCenter]);
+
+  const performSpaceImport = useCallback((
+    spaceRef: SpaceImportRequestDetail["spaceRef"],
+  ): boolean => {
+    const existingGroup = spaceGroupsRef.current.find((item) => (
+      item.spaceRef.displayIndex === spaceRef.displayIndex &&
+      item.spaceRef.spaceIndex === spaceRef.spaceIndex
+    ));
+    if (existingGroup) {
+      canvas.focusOn(existingGroup);
+      return true;
+    }
+
+    const display = mirrorReport?.displays.find(
+      (candidate) => candidate.index === spaceRef.displayIndex,
+    );
+    const space = mirrorReport?.spaces.find((candidate) => (
+      candidate.display === spaceRef.displayIndex && candidate.index === spaceRef.spaceIndex
+    ));
+    if (!display || !space || !mirrorReport) {
+      setPersistenceWarning(`Space ${spaceRef.spaceIndex} is unavailable`);
+      return false;
+    }
+
+    const ungroupedTerminals = terminalTilesRef.current.filter((item) => !item.groupId);
+    const draft = createSpaceImportPlan({
+      spaceRef,
+      display,
+      space,
+      windows: mirrorReport.windows,
+      census,
+      modelByOracle,
+      existingTerminals: ungroupedTerminals,
+    });
+    const landing = groupLanding(draft.group.w, draft.group.h);
+    const plan = createSpaceImportPlan({
+      spaceRef,
+      display,
+      space,
+      windows: mirrorReport.windows,
+      census,
+      modelByOracle,
+      existingTerminals: ungroupedTerminals,
+      groupId: draft.group.groupId,
+      groupGeometry: landing,
+    });
+    const terminalCount = plan.livePaneCount + plan.polledPaneCount;
+    if (terminalCount > 0 && !window.confirm(
+      `${plan.livePaneCount} live / ${plan.polledPaneCount} poll — pull space ${spaceRef.spaceIndex}?`,
+    )) {
+      return false;
+    }
+
+    const adopted = terminalTilesRef.current.filter((item) => (
+      plan.adoptedTerminalIds.includes(item.id)
+    ));
+    const group = { ...plan.group, zIndex: nextUserZ() };
+    const terminals = plan.terminals.map((item) => ({
+      ...item,
+      zIndex: nextUserZ(),
+    }));
+    const byId = new Map(terminals.map((item) => [item.id, item]));
+    setBoardItems((current) => [...current, group]);
+    setTerminalTiles((current) => [
+      ...current.map((item) => byId.get(item.id) ?? item),
+      ...terminals.filter((item) => !current.some((candidate) => candidate.id === item.id)),
+    ]);
+    spaceImportUndoRef.current = { groupId: group.groupId, adopted };
+    setPersistenceWarning(null);
+    window.requestAnimationFrame(() => canvas.focusOn(group));
+    return true;
+  }, [canvas, census, groupLanding, mirrorReport, modelByOracle, nextUserZ]);
+
+  useEffect(() => {
+    const onImport = (event: Event) => {
+      const request = event as CustomEvent<SpaceImportRequestDetail>;
+      if (!request.detail?.spaceRef) return;
+      if (performSpaceImport(request.detail.spaceRef)) request.preventDefault();
+    };
+    window.addEventListener(SPACE_IMPORT_EVENT, onImport);
+    return () => window.removeEventListener(SPACE_IMPORT_EVENT, onImport);
+  }, [performSpaceImport]);
+
   const raiseUserItem = useCallback((id: string) => {
     const zIndex = nextUserZ();
+    const group = spaceGroupsRef.current.find((item) => item.id === id);
     setBoardItems((current) => current.map((item) => (
       item.id === id ? { ...item, zIndex } : item
     )));
-    setTerminalTiles((current) => current.map((item) => (
-      item.id === id ? { ...item, zIndex } : item
-    )));
+    setTerminalTiles((current) => current.map((item) => {
+      if (group && item.groupId === group.groupId) {
+        return { ...item, zIndex: nextUserZ() };
+      }
+      return item.id === id ? { ...item, zIndex } : item;
+    }));
   }, [nextUserZ]);
 
   const raiseOracle = useCallback((oracle: OracleTileItem) => {
@@ -1108,11 +1296,76 @@ function BoardPageView({
       return;
     }
     if (next.kind === "terminal") {
+      if (next.groupId) {
+        const group = spaceGroupsRef.current.find((item) => item.groupId === next.groupId);
+        if (group) {
+          setBoardItems((current) => current.map((item) => (
+            item.id === group.id && item.kind === "space-import"
+              ? {
+                  ...item,
+                  members: item.members.map((member) => member.id === next.id ? {
+                    ...member,
+                    geometry: {
+                      x: next.x - group.x,
+                      y: next.y - group.y,
+                      w: next.w,
+                      h: next.h,
+                    },
+                  } : member),
+                }
+              : item
+          )));
+        }
+      }
       setTerminalTiles((current) => current.map((item) => (
         item.id === next.id
           ? { ...next, zIndex: Math.max(tileZIndex(item), tileZIndex(next)) }
           : item
       )));
+      return;
+    }
+    if (next.kind === "space-import") {
+      const current = spaceGroupsRef.current.find((item) => item.id === next.id);
+      if (!current) return;
+      const resizing = !current.collapsed && (
+        Math.abs(next.w - current.w) > 0.01 || Math.abs(next.h - current.h) > 0.01
+      );
+      const scaleX = resizing ? next.w / Math.max(1, current.w) : 1;
+      const oldContentHeight = Math.max(1, current.h - SPACE_GROUP_HEADER_HEIGHT);
+      const nextContentHeight = Math.max(1, next.h - SPACE_GROUP_HEADER_HEIGHT);
+      const scaleY = resizing ? nextContentHeight / oldContentHeight : 1;
+      const members = current.members.map((member) => ({
+        ...member,
+        geometry: resizing ? {
+          x: member.geometry.x * scaleX,
+          y: SPACE_GROUP_HEADER_HEIGHT +
+            (member.geometry.y - SPACE_GROUP_HEADER_HEIGHT) * scaleY,
+          w: member.geometry.w * scaleX,
+          h: member.geometry.h * scaleY,
+        } : member.geometry,
+      }));
+      const updated: SpaceImportBoardItem = {
+        ...current,
+        ...next,
+        members,
+        expandedSize: resizing
+          ? { w: next.w, h: next.h }
+          : current.expandedSize,
+        zIndex: Math.max(tileZIndex(current), tileZIndex(next)),
+      };
+      setBoardItems((items) => items.map((item) => item.id === next.id ? updated : item));
+      const byId = new Map(members.map((member) => [member.id, member]));
+      setTerminalTiles((items) => items.map((item) => {
+        if (item.groupId !== current.groupId) return item;
+        const member = byId.get(item.id);
+        return member ? {
+          ...item,
+          x: next.x + member.geometry.x,
+          y: next.y + member.geometry.y,
+          w: member.geometry.w,
+          h: member.geometry.h,
+        } : item;
+      }));
       return;
     }
     setBoardItems((current) => current.map((item) => (
@@ -1130,13 +1383,83 @@ function BoardPageView({
     )));
   }, []);
 
-  const closeBoardItem = useCallback((id: string) => {
-    setBoardItems((current) => current.filter((item) => item.id !== id));
+  const toggleSpaceGroup = useCallback((id: string) => {
+    setBoardItems((current) => current.map((item) => {
+      if (item.id !== id || item.kind !== "space-import") return item;
+      if (item.collapsed) {
+        return {
+          ...item,
+          collapsed: false,
+          w: item.expandedSize.w,
+          h: item.expandedSize.h,
+        };
+      }
+      return {
+        ...item,
+        collapsed: true,
+        h: SPACE_GROUP_HEADER_HEIGHT,
+        expandedSize: { w: item.w, h: item.h },
+      };
+    }));
   }, []);
+
+  const removeSpaceGroup = useCallback((id: string) => {
+    const group = spaceGroupsRef.current.find((item) => item.id === id);
+    if (!group) return false;
+    const undo = spaceImportUndoRef.current?.groupId === group.groupId
+      ? spaceImportUndoRef.current
+      : null;
+    const originalById = new Map((undo?.adopted ?? []).map((item) => [item.id, item]));
+    const memberById = new Map(group.members.map((member) => [member.id, member]));
+
+    setBoardItems((current) => current.filter((item) => item.id !== id));
+    setTerminalTiles((current) => current.flatMap((item): TerminalTileItem[] => {
+      if (item.groupId !== group.groupId) return [item];
+      const original = originalById.get(item.id);
+      if (original) return [original];
+      const member = memberById.get(item.id);
+      if (!member?.adoptedGeometry) return [];
+      const {
+        groupId: _groupId,
+        streamEligible: _streamEligible,
+        streamPriority: _streamPriority,
+        ...ungrouped
+      } = item;
+      return [{ ...ungrouped, ...member.adoptedGeometry }];
+    }));
+    if (undo) spaceImportUndoRef.current = null;
+    return true;
+  }, []);
+
+  const closeBoardItem = useCallback((id: string) => {
+    if (removeSpaceGroup(id)) return;
+    setBoardItems((current) => current.filter((item) => item.id !== id));
+  }, [removeSpaceGroup]);
 
   const closeTerminal = useCallback((id: string) => {
     setTerminalTiles((current) => current.filter((item) => item.id !== id));
   }, []);
+
+  useEffect(() => {
+    const onUndo = (event: KeyboardEvent) => {
+      if (
+        event.key.toLowerCase() !== "z" ||
+        (!event.metaKey && !event.ctrlKey) ||
+        event.altKey ||
+        event.shiftKey ||
+        event.repeat ||
+        isEditableTarget(event.target)
+      ) {
+        return;
+      }
+      const undo = spaceImportUndoRef.current;
+      if (!undo) return;
+      event.preventDefault();
+      removeSpaceGroup(undo.groupId);
+    };
+    window.addEventListener("keydown", onUndo);
+    return () => window.removeEventListener("keydown", onUndo);
+  }, [removeSpaceGroup]);
 
   const sendToBack = useCallback((id: string) => {
     const items: UserBoardItem[] = [...boardItems, ...terminalTiles];
@@ -1169,15 +1492,17 @@ function BoardPageView({
   }, [boardItems, terminalTiles]);
 
   const deleteBoardItem = useCallback((id: string) => {
+    if (removeSpaceGroup(id)) return;
     setBoardItems((current) => current.filter((item) => item.id !== id));
     setTerminalTiles((current) => current.filter((item) => item.id !== id));
-  }, []);
+  }, [removeSpaceGroup]);
 
   const resetLayout = useCallback(() => {
     clearBoardState(pageId);
     setFleetGeometry({});
     setBoardItems([]);
     setTerminalTiles([]);
+    spaceImportUndoRef.current = null;
     topZRef.current = USER_ITEM_MIN_Z - 1;
     setSelectedOracleId(null);
     jumpCursorRef.current = null;
@@ -1425,9 +1750,13 @@ function BoardPageView({
               siblings={allTiles}
               canvas={canvas}
               style={{ zIndex: tileZIndex(item) }}
-              minWidth={item.kind === "image" ? 64 : undefined}
-              minHeight={item.kind === "image" ? 48 : undefined}
-              aspectRatio={item.kind === "image" ? imageAspectRatio(item) : null}
+              minWidth={item.kind === "image" ? 64 : item.kind === "space-import" ? 240 : undefined}
+              minHeight={item.kind === "image" ? 48 : item.kind === "space-import" ? SPACE_GROUP_HEADER_HEIGHT : undefined}
+              aspectRatio={item.kind === "image"
+                ? imageAspectRatio(item)
+                : item.kind === "space-import" && !item.collapsed
+                  ? item.expandedSize.w / item.expandedSize.h
+                  : null}
               className={`${tileClassName(item)} ${
                 selected
                   ? "selected ring-2 ring-[var(--idle)] ring-offset-2 ring-offset-[var(--bg)] shadow-[0_0_14px_var(--idle-glow)]"
@@ -1507,7 +1836,30 @@ function BoardPageView({
                   ) : null}
                 </div>
               ) : item.kind === "terminal" ? (
-                <TerminalTile item={item} onClose={closeTerminal} theme={theme} />
+                <TerminalTile
+                  item={item}
+                  onClose={item.groupId ? undefined : closeTerminal}
+                  onTransportModeChange={(id, mode) => setTerminalModes((current) => (
+                    current[id] === mode ? current : { ...current, [id]: mode }
+                  ))}
+                  streamEligible={item.streamEligible}
+                  streamPriority={item.streamPriority}
+                  theme={theme}
+                />
+              ) : item.kind === "space-import" ? (
+                <SpaceImportGroup
+                  item={item}
+                  liveCount={item.collapsed ? 0 : terminalTiles.filter((terminal) => (
+                    terminal.groupId === item.groupId && terminalModes[terminal.id] === "stream"
+                  )).length}
+                  pollCount={terminalTiles.filter((terminal) => (
+                    terminal.groupId === item.groupId && (
+                      item.collapsed || terminalModes[terminal.id] !== "stream"
+                    )
+                  )).length}
+                  onToggle={toggleSpaceGroup}
+                  onRemove={removeSpaceGroup}
+                />
               ) : (
                 <BoardItemContent
                   item={item}
@@ -1821,6 +2173,8 @@ export default function App() {
       onRenamePage={renamePage}
       onDeletePage={deletePage}
       oracleDisplayPages={oracleDisplayPages}
+      mirrorReport={mirror.report}
+      modelByOracle={mirrorModels}
       theme={theme}
       onToggleTheme={toggleTheme}
     />

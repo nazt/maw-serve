@@ -1,4 +1,4 @@
-export type BoardItemKind = "note" | "image";
+export type BoardItemKind = "note" | "image" | "space-import";
 export type BoardPoint = readonly [number, number] | { x: number; y: number };
 export type BoardPlacement = BoardPoint | { center: BoardPoint };
 
@@ -22,6 +22,39 @@ export interface ImageBoardItem extends BoardItemGeometry {
   id: string;
   kind: "image";
   data: string | ImageBoardData;
+}
+
+export interface SpaceReference {
+  displayIndex: number;
+  spaceIndex: number;
+}
+
+export interface SpaceImportMember {
+  id: string;
+  windowId: number;
+  kind: "terminal" | "ghost";
+  oracle: string | null;
+  app: string;
+  geometry: Omit<BoardItemGeometry, "zIndex">;
+  target: {
+    session: string;
+    window: string;
+    model?: string;
+  } | null;
+  adoptedItemId?: string;
+  adoptedGeometry?: BoardItemGeometry;
+}
+
+/** Descriptor-only: terminal frames are always fetched live and never stored. */
+export interface SpaceImportBoardItem extends BoardItemGeometry {
+  id: string;
+  kind: "space-import";
+  data: Record<string, never>;
+  groupId: string;
+  spaceRef: SpaceReference;
+  members: SpaceImportMember[];
+  collapsed: boolean;
+  expandedSize: { w: number; h: number };
 }
 
 export interface ImageBoardData {
@@ -49,7 +82,7 @@ export interface PreparedImage {
   mediaType: string;
 }
 
-export type BoardItem = NoteBoardItem | ImageBoardItem;
+export type BoardItem = NoteBoardItem | ImageBoardItem | SpaceImportBoardItem;
 
 export interface ClipboardImageReader {
   read?: () => Promise<Array<{
