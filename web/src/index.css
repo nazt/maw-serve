@@ -195,7 +195,9 @@
     z-index: 1;
   }
 
-  .fabric > .tile[data-attention] {
+  .fabric > .tile[data-attention],
+  .fabric > .tile:has(.oracle-tile[data-attention="warn"]),
+  .fabric > .tile:has(.oracle-tile[data-attention="critical"]) {
     z-index: 6;
   }
 
@@ -290,7 +292,9 @@
 
   /* Attention outranks calm status: full ring, faster pulse, unmistakable flag. */
   .tile[data-attention="warn"],
-  .tile[data-attention="critical"] {
+  .tile[data-attention="critical"],
+  .tile:has(.oracle-tile[data-attention="warn"]),
+  .tile:has(.oracle-tile[data-attention="critical"]) {
     --attention-channels: var(--attention-warn-channels);
     --attention-status: var(--attention-warn);
     --attention-glow: var(--attention-warn-glow);
@@ -305,11 +309,13 @@
     filter: saturate(1.08);
   }
 
-  .tile[data-attention="warn"] {
+  .tile[data-attention="warn"],
+  .tile:has(.oracle-tile[data-attention="warn"]) {
     @apply animate-attention-warn;
   }
 
-  .tile[data-attention="critical"] {
+  .tile[data-attention="critical"],
+  .tile:has(.oracle-tile[data-attention="critical"]) {
     --attention-channels: var(--attention-critical-channels);
     --attention-status: var(--attention-critical);
     --attention-glow: var(--attention-critical-glow);
@@ -320,7 +326,9 @@
   }
 
   .tile[data-attention="warn"]::after,
-  .tile[data-attention="critical"]::after {
+  .tile[data-attention="critical"]::after,
+  .tile:has(.oracle-tile[data-attention="warn"])::after,
+  .tile:has(.oracle-tile[data-attention="critical"])::after {
     position: absolute;
     z-index: 30;
     top: -0.5rem;
@@ -650,7 +658,9 @@
   }
 
   .tile[data-attention="warn"],
-  .tile[data-attention="critical"] {
+  .tile[data-attention="critical"],
+  .tile:has(.oracle-tile[data-attention="warn"]),
+  .tile:has(.oracle-tile[data-attention="critical"]) {
     animation: none;
     box-shadow:
       0 0 0 2px oklch(var(--attention-channels) / 0.9),
