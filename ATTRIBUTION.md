@@ -13,3 +13,7 @@ User-Agent used to survive WAF/CDN checks.
 (`maw serve`, argus, census, window-arranger) — no source code from `sshx` was copied into
 this project. Credit to Eric Zhang and the sshx contributors for the original idea of a
 collaborative, shareable terminal/board experience.
+
+The Stoa physical-display mirror is a clean-room implementation informed by
+[**laris-co/display-census**](https://github.com/laris-co/display-census)'s public
+WebSocket and SpaceReport contracts; no display-census UI source was copied.

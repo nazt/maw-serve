@@ -6,6 +6,8 @@ const PORT = Number(process.env.MAW_SERVE_PORT ?? 48_901);
 const PUBLIC_DIR = `${import.meta.dir}/public`;
 const BUILD_IDENTITY_PATH = `${PUBLIC_DIR}/stoa-build.json`;
 const USAGE_URL = "https://argus.buildwithoracle.com/api/board-tile?window_h=6";
+const MIRROR_SPACES_URL = process.env.STOA_MIRROR_SPACES_URL ?? "http://127.0.0.1:8899/api/spaces";
+const MIRROR_ORACLES_URL = process.env.STOA_MIRROR_ORACLES_URL ?? "http://127.0.0.1:8899/api/oracles";
 const USAGE_CACHE_MS = 8_000;
 const CAPTURE_CACHE_MS = 2_000;
 const DEFAULT_CAPTURE_LINES = 80;
@@ -48,6 +50,26 @@ const STREAM_HEADERS = {
   "x-agora-content-warning": "explicit-user-requested-pane-snapshot",
 };
 const textEncoder = new TextEncoder();
+
+export async function mirrorResponse(upstreamUrl: string): Promise<Response> {
+  try {
+    const upstream = await fetch(upstreamUrl, {
+      headers: { Accept: "application/json" },
+    });
+    if (!upstream.ok) throw new Error(`display-census returned ${upstream.status}`);
+    return new Response(upstream.body, {
+      headers: {
+        "content-type": upstream.headers.get("content-type") ?? "application/json; charset=utf-8",
+        "cache-control": "no-store",
+      },
+    });
+  } catch (cause) {
+    return Response.json({
+      error: "display census unavailable",
+      detail: cause instanceof Error ? cause.message : String(cause),
+    }, { status: 502, headers: { "cache-control": "no-store" } });
+  }
+}
 
 function configuredCorsOrigins(): Set<string> {
   const origins = new Set<string>();
@@ -801,6 +823,8 @@ export async function handleRequest(req: Request): Promise<Response> {
   }
 
   if (url.pathname === "/api/agora/census") return respond(await censusResponse());
+  if (url.pathname === "/api/spaces") return respond(await mirrorResponse(MIRROR_SPACES_URL));
+  if (url.pathname === "/api/oracles") return respond(await mirrorResponse(MIRROR_ORACLES_URL));
   if (url.pathname === "/api/agora/usage") return respond(await usageResponse());
   if (url.pathname === "/api/agora/version") return respond(await versionResponse());
   if (url.pathname === "/api/agora/capture") return respond(await captureResponse(url));

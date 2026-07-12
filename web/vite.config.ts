@@ -36,6 +36,10 @@ export default defineConfig(({ command }) => {
     server: {
       port: STOA_DEV_PORT,
       strictPort: true,
+      proxy: {
+        "/api/spaces": "http://127.0.0.1:8899",
+        "/api/oracles": "http://127.0.0.1:8899",
+      },
     },
     preview: {
       port: STOA_DEV_PORT,

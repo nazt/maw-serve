@@ -162,7 +162,8 @@ export function normalizeOracleHandle(value: unknown): string {
   return String(value ?? "")
     .trim()
     .toLowerCase()
-    .replace(/-oracle$/i, "");
+    .replace(/[\s_-]+oracle$/i, "")
+    .replace(/[\s_]+/g, "-");
 }
 
 function normalizeStatus(value: unknown): OracleStatus {

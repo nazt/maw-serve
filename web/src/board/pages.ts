@@ -6,6 +6,8 @@ export const DEFAULT_PAGE_ID = "fleet";
 export interface BoardPage {
   id: string;
   name: string;
+  system?: "display";
+  displayIndex?: number;
 }
 
 const DEFAULT_PAGES: BoardPage[] = [{ id: DEFAULT_PAGE_ID, name: "fleet" }];

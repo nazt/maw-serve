@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 
-import { handleRequest } from "../server-demo";
+import { handleRequest, mirrorResponse } from "../server-demo";
 
 const ALLOWED_ORIGIN = "https://stoa.example.com";
 
@@ -69,4 +69,20 @@ test("SSE errors retain CORS headers and denied preflights fail closed", async (
   expect(denied.status).toBe(403);
   expect(denied.headers.get("access-control-allow-origin")).toBeNull();
   expect(denied.headers.get("access-control-allow-private-network")).toBeNull();
+});
+
+test("mirror snapshot proxy is uncached and fails closed", async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => Response.json({ spaces: [{ index: 1 }] });
+    const response = await mirrorResponse("http://census.test/api/spaces");
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(await response.json()).toEqual({ spaces: [{ index: 1 }] });
+
+    globalThis.fetch = async () => { throw new Error("offline"); };
+    expect((await mirrorResponse("http://census.test/api/spaces")).status).toBe(502);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

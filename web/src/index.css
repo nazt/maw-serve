@@ -134,6 +134,27 @@
 }
 
 @layer components {
+  .mirror-window {
+    border-color: oklch(var(--line-channels) / 0.72);
+    color: var(--ink-faint);
+  }
+
+  .mirror-window--oracle {
+    border-color: var(--mirror-signal);
+    color: var(--mirror-signal);
+    box-shadow: inset 0 0 7px color-mix(in oklch, var(--mirror-signal) 14%, transparent);
+    cursor: pointer;
+  }
+
+  .mirror-window--focus {
+    border-color: var(--ink);
+    box-shadow: 0 0 0 1px var(--ink), 0 0 8px oklch(var(--ink-channels) / 0.22);
+  }
+
+  .mirror-window--oracle[data-pulse="live"] {
+    animation: mirror-pulse 1.8s var(--ease-out-expo) infinite;
+  }
+
   .terminal-tile__viewport .xterm {
     height: 100%;
   }
@@ -752,6 +773,15 @@
     opacity: 0.56;
     pointer-events: none;
   }
+}
+
+@keyframes mirror-pulse {
+  0%, 100% { opacity: 0.82; }
+  45% { opacity: 1; box-shadow: 0 0 10px var(--mirror-signal); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mirror-window--oracle[data-pulse="live"] { animation: none; }
 }
 
 @keyframes terminal-live-pulse {
