@@ -19,6 +19,13 @@ const ORACLE_HEIGHT = 96;
 const GRID_STEP_X = 240;
 const GRID_STEP_Y = 130;
 const GRID_COLUMNS = 6;
+const COMPACT_ORACLE_WIDTH = 160;
+const COMPACT_ORACLE_HEIGHT = 48;
+const COMPACT_GRID_STEP_X = 176;
+const COMPACT_GRID_STEP_Y = 64;
+const COMPACT_GRID_COLUMNS = 8;
+
+export const LONG_STALE_THRESHOLD_SEC = 60 * 60;
 
 export type OracleStatus = "active" | "idle" | "stale" | "pinned" | "error";
 export type AttentionLevel = "none" | "warn" | "critical";
@@ -88,6 +95,7 @@ export interface OracleTileData {
   pinned: boolean;
   display: string;
   space: string;
+  density: "standard" | "compact";
 }
 
 export interface OracleTileItem extends TileGeometry {
@@ -117,7 +125,7 @@ export type {
   NoteBoardItem,
 } from "../board/boardItems";
 
-interface FleetRecord extends OracleTileData {
+interface FleetRecord extends Omit<OracleTileData, "density"> {
   handle: string;
   order: number;
 }
@@ -306,16 +314,23 @@ export function buildFleetTiles(
   const usageIndex = buildUsageIndex(usage);
   const records = activeRepresentative(flattenCensus(census));
 
-  return records.map((record, index) => {
+  const tiles: OracleTileItem[] = records.map((record) => {
     const rates = usageIndex.get(record.handle);
+    const attention = computeAttention(record.status, record.idleSec, rates);
+    const compact = (
+      record.status === "stale" &&
+      finiteIdle(record.idleSec) >= LONG_STALE_THRESHOLD_SEC &&
+      !record.pinned &&
+      attention.level === "none"
+    );
     return {
       id: record.handle,
       kind: "oracle",
-      x: (index % GRID_COLUMNS) * GRID_STEP_X,
-      y: Math.floor(index / GRID_COLUMNS) * GRID_STEP_Y,
-      w: ORACLE_WIDTH,
-      h: ORACLE_HEIGHT,
-      attention: computeAttention(record.status, record.idleSec, rates),
+      x: 0,
+      y: 0,
+      w: compact ? COMPACT_ORACLE_WIDTH : ORACLE_WIDTH,
+      h: compact ? COMPACT_ORACLE_HEIGHT : ORACLE_HEIGHT,
+      attention,
       data: {
         oracle: record.oracle,
         status: record.status,
@@ -326,9 +341,25 @@ export function buildFleetTiles(
         pinned: record.pinned,
         display: record.display,
         space: record.space,
+        density: compact ? "compact" : "standard",
       },
     };
   });
+
+  const standard = tiles.filter((tile) => tile.data.density === "standard");
+  const compact = tiles.filter((tile) => tile.data.density === "compact");
+  const compactStartY = Math.ceil(standard.length / GRID_COLUMNS) * GRID_STEP_Y;
+
+  standard.forEach((tile, index) => {
+    tile.x = (index % GRID_COLUMNS) * GRID_STEP_X;
+    tile.y = Math.floor(index / GRID_COLUMNS) * GRID_STEP_Y;
+  });
+  compact.forEach((tile, index) => {
+    tile.x = (index % COMPACT_GRID_COLUMNS) * COMPACT_GRID_STEP_X;
+    tile.y = compactStartY + Math.floor(index / COMPACT_GRID_COLUMNS) * COMPACT_GRID_STEP_Y;
+  });
+
+  return [...standard, ...compact];
 }
 
 export function summarizeAttention(tiles: readonly FleetTileItem[]): AttentionSummary {
@@ -349,7 +380,7 @@ function finiteGeometry(value: unknown, fallback: number): number {
 }
 
 function preserveGeometry(next: OracleTileItem, previous?: OracleTileItem): OracleTileItem {
-  if (!previous) return next;
+  if (!previous || previous.data.density !== next.data.density) return next;
 
   return {
     ...next,
@@ -365,6 +396,11 @@ export function mergeFleetTiles(
   nextOracles: OracleTileItem[],
 ): OracleTileItem[] {
   const currentById = new Map(current.map((item) => [item.id, item]));
+  const densityChanged = nextOracles.some((item) => {
+    const previous = currentById.get(item.id);
+    return previous && previous.data.density !== item.data.density;
+  });
+  if (densityChanged) return nextOracles;
   return nextOracles.map((item) => preserveGeometry(item, currentById.get(item.id)));
 }
 

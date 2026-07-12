@@ -30,6 +30,7 @@ function heatState(heat: number): "cool" | "warm" | "hot" {
 
 export function OracleTileContent({ item, className = "" }: OracleTileContentProps) {
   const { oracle, status, modelTier, idleSec, annotation, heat, pinned } = item.data;
+  const compact = item.data.density === "compact";
   const safeHeat = Math.min(100, Math.max(0, Number.isFinite(heat) ? heat : 0));
   const statusColor = STATUS_COLOR[status];
   const annotationText = annotation || "No annotation";
@@ -42,11 +43,13 @@ export function OracleTileContent({ item, className = "" }: OracleTileContentPro
 
   return (
     <div
-      className={`oracle-tile oracle-content relative h-full min-w-0 overflow-hidden rounded-md border border-[var(--node-status)] p-2.5 ${status === "active" ? "motion-safe:animate-breathe" : ""} ${className}`}
+      className={`oracle-tile oracle-content relative h-full min-w-0 overflow-hidden rounded-md border border-[var(--node-status)] ${compact ? "p-2 pr-7" : "p-2.5"} ${status === "active" ? "motion-safe:animate-breathe" : ""} ${className}`}
       data-status={status}
       data-heat={heatState(safeHeat)}
       data-pinned={pinned || undefined}
+      data-density={item.data.density}
       style={style}
+      title={compact ? `${oracle} · stale ${idleLabel(idleSec)} · double-click to open terminal` : undefined}
     >
       <span
         className="heat-ring pointer-events-none absolute inset-0 rounded-md"
@@ -54,44 +57,68 @@ export function OracleTileContent({ item, className = "" }: OracleTileContentPro
         aria-label={`${oracle}: ${safeHeat}% five-hour usage`}
       />
 
-      <div className="relative z-10 grid h-full content-center gap-1">
-        <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1.5">
+      {compact ? (
+        <div className="relative z-10 grid h-full min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1.5">
           <span
             className="status-dot h-2 w-2 rounded-full"
             style={{
               backgroundColor: statusColor,
-              boxShadow: `0 0 7px ${statusColor}`,
+              boxShadow: `0 0 5px ${statusColor}`,
             }}
             role="img"
             aria-label={`${status} status`}
           />
-          <strong className="truncate font-mono text-sm font-bold tracking-tight text-[var(--ink)]">
+          <strong className="truncate font-mono text-xs font-bold tracking-tight text-[var(--ink)]">
             {oracle}
           </strong>
-          {modelTier && modelTier.toLowerCase() !== "unknown" ? (
-            <span className="max-w-24 truncate rounded-full bg-[var(--surface-2)] px-1.5 py-0.5 font-mono text-[10px] font-semibold text-[var(--ink-dim)]">
-              {modelTier}
-            </span>
-          ) : null}
-        </div>
-
-        <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-baseline gap-1.5">
-          <span
-            className="whitespace-nowrap font-mono text-[11px] tabular-nums"
-            style={{ color: "var(--ink-dim)" }}
-          >
+          <span className="whitespace-nowrap font-mono text-[10px] tabular-nums text-[var(--ink-dim)]">
             {idleLabel(idleSec)}
           </span>
-          <span
-            className={`oracle-annotation truncate text-xs leading-snug text-[var(--ink-dim)] ${annotationNeedsDisclosure ? "cursor-help" : ""}`}
-            title={annotationNeedsDisclosure ? annotationText : undefined}
-            tabIndex={annotationNeedsDisclosure ? 0 : undefined}
-            aria-label={annotationNeedsDisclosure ? `Full annotation: ${annotationText}` : undefined}
-          >
+          <span className="sr-only">
+            {modelTier && modelTier.toLowerCase() !== "unknown" ? `Model ${modelTier}. ` : ""}
             {annotationText}
           </span>
         </div>
-      </div>
+      ) : (
+        <div className="relative z-10 grid h-full content-center gap-1">
+          <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1.5">
+            <span
+              className="status-dot h-2 w-2 rounded-full"
+              style={{
+                backgroundColor: statusColor,
+                boxShadow: `0 0 7px ${statusColor}`,
+              }}
+              role="img"
+              aria-label={`${status} status`}
+            />
+            <strong className="truncate font-mono text-sm font-bold tracking-tight text-[var(--ink)]">
+              {oracle}
+            </strong>
+            {modelTier && modelTier.toLowerCase() !== "unknown" ? (
+              <span className="max-w-24 truncate rounded-full bg-[var(--surface-2)] px-1.5 py-0.5 font-mono text-[10px] font-semibold text-[var(--ink-dim)]">
+                {modelTier}
+              </span>
+            ) : null}
+          </div>
+
+          <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-baseline gap-1.5">
+            <span
+              className="whitespace-nowrap font-mono text-[11px] tabular-nums"
+              style={{ color: "var(--ink-dim)" }}
+            >
+              {idleLabel(idleSec)}
+            </span>
+            <span
+              className={`oracle-annotation truncate text-xs leading-snug text-[var(--ink-dim)] ${annotationNeedsDisclosure ? "cursor-help" : ""}`}
+              title={annotationNeedsDisclosure ? annotationText : undefined}
+              tabIndex={annotationNeedsDisclosure ? 0 : undefined}
+              aria-label={annotationNeedsDisclosure ? `Full annotation: ${annotationText}` : undefined}
+            >
+              {annotationText}
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
