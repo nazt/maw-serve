@@ -11,6 +11,7 @@ export default {
     "text-ink",
     "text-ink-dim",
     "text-ink-faint",
+    "text-ink-inverse",
     "border-line",
     "border-active",
     "border-idle",
@@ -81,6 +82,7 @@ export default {
         ink: oklch("--ink-channels"),
         "ink-dim": oklch("--ink-dim-channels"),
         "ink-faint": oklch("--ink-faint-channels"),
+        "ink-inverse": oklch("--ink-inverse-channels"),
         line: oklch("--line-channels"),
 
         active: oklch("--active-channels"),

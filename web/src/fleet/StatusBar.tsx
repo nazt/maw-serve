@@ -109,7 +109,7 @@ export function StatusBar({ items, usage, error = null, className = "" }: Status
     >
       <div className="flex min-w-0 flex-1 items-center gap-4 overflow-hidden">
         {error ? (
-          <span className="truncate font-mono text-xs text-[var(--error)]">
+          <span className="truncate font-mono text-xs text-[var(--ink)]">
             telemetry interrupted · retrying
           </span>
         ) : (
