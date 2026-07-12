@@ -48,6 +48,7 @@ export interface UseDragOptions<Item extends TileItem> {
   canvas: CanvasTransform;
   minWidth?: number;
   minHeight?: number;
+  aspectRatio?: number | null;
   onChange?: (item: Item, kind: TileChangeKind) => void;
   onCommit?: (item: Item, kind: TileChangeKind) => void;
 }
@@ -73,6 +74,7 @@ type PointerSnapshot = {
   pageY: number;
   clientX: number;
   clientY: number;
+  shiftKey: boolean;
 };
 
 type PendingDrag = {
@@ -101,6 +103,7 @@ type ResizeInteraction = {
   startWorld: Point;
   startWidth: number;
   startHeight: number;
+  aspectRatio: number | null;
   moved: boolean;
 };
 
@@ -170,6 +173,7 @@ function pointerSnapshot(event: ReactPointerEvent<HTMLElement>): PointerSnapshot
     pageY: finite(event.pageY, event.clientY),
     clientX: finite(event.clientX, event.pageX),
     clientY: finite(event.clientY, event.pageY),
+    shiftKey: event.shiftKey,
   };
 }
 
@@ -340,6 +344,7 @@ export function useDrag<Item extends TileItem>({
   canvas,
   minWidth = MIN_TILE_WIDTH,
   minHeight = MIN_TILE_HEIGHT,
+  aspectRatio = null,
   onChange,
   onCommit,
 }: UseDragOptions<Item>): UseDragResult {
@@ -420,30 +425,76 @@ export function useDrag<Item extends TileItem>({
       return;
     }
 
-    const proposedWidth = Math.max(
-      minWidth,
-      interaction.startWidth + world.x - interaction.startWorld.x,
-    );
-    const proposedHeight = Math.max(
-      minHeight,
-      interaction.startHeight + world.y - interaction.startWorld.y,
-    );
+    const deltaX = world.x - interaction.startWorld.x;
+    const deltaY = world.y - interaction.startWorld.y;
+    interaction.moved = true;
+    userResizedRef.current = true;
+
+    if (interaction.aspectRatio && !pointer.shiftKey) {
+      const widthScaleDelta = deltaX / Math.max(1, interaction.startWidth);
+      const heightScaleDelta = deltaY / Math.max(1, interaction.startHeight);
+      const widthDominant = Math.abs(widthScaleDelta) >= Math.abs(heightScaleDelta);
+      const ratio = interaction.aspectRatio;
+      let width: number;
+      let height: number;
+      let nextGuides: SnapGuide[];
+
+      if (widthDominant) {
+        const proposedWidth = Math.max(
+          minWidth,
+          interaction.startWidth + deltaX,
+          minHeight * ratio,
+        );
+        const snapped = snapWidth(
+          itemRef.current,
+          proposedWidth,
+          siblingsRef.current,
+          currentCanvas.zoom,
+          minWidth,
+        );
+        width = Math.max(snapped.width, minHeight * ratio);
+        height = width / ratio;
+        nextGuides = snapped.guides;
+      } else {
+        const proposedHeight = Math.max(
+          minHeight,
+          interaction.startHeight + deltaY,
+          minWidth / ratio,
+        );
+        const snapped = snapHeight(
+          itemRef.current,
+          proposedHeight,
+          siblingsRef.current,
+          currentCanvas.zoom,
+          minHeight,
+        );
+        height = Math.max(snapped.height, minWidth / ratio);
+        width = height * ratio;
+        nextGuides = snapped.guides;
+      }
+
+      setGuides(nextGuides);
+      publishGeometry({
+        ...current,
+        w: Math.round(width),
+        h: Math.round(height),
+      }, "resize");
+      return;
+    }
     const snappedWidth = snapWidth(
       itemRef.current,
-      proposedWidth,
+      interaction.startWidth + deltaX,
       siblingsRef.current,
       currentCanvas.zoom,
       minWidth,
     );
     const snappedHeight = snapHeight(
       itemRef.current,
-      proposedHeight,
+      interaction.startHeight + deltaY,
       siblingsRef.current,
       currentCanvas.zoom,
       minHeight,
     );
-    interaction.moved = true;
-    userResizedRef.current = true;
     setGuides([...snappedWidth.guides, ...snappedHeight.guides]);
     publishGeometry({
       ...current,
@@ -535,10 +586,13 @@ export function useDrag<Item extends TileItem>({
       }),
       startWidth: geometryRef.current.w,
       startHeight: geometryRef.current.h,
+      aspectRatio: Number.isFinite(Number(aspectRatio)) && Number(aspectRatio) > 0
+        ? Number(aspectRatio)
+        : null,
       moved: false,
     };
     setActiveMode("resize");
-  }, [clearInteraction]);
+  }, [aspectRatio, clearInteraction]);
 
   const onPointerMove = useCallback<PointerEventHandler<HTMLElement>>((event) => {
     const interaction = interactionRef.current;

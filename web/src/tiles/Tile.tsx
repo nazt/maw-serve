@@ -18,6 +18,7 @@ export interface TileProps<Item extends TileItem = TileItem> {
   minWidth?: number;
   minHeight?: number;
   onActivate?: (item: Item) => void;
+  aspectRatio?: number | null;
   onChange?: (item: Item, kind: TileChangeKind) => void;
   onCommit?: (item: Item, kind: TileChangeKind) => void;
 }
@@ -71,6 +72,7 @@ export function Tile<Item extends TileItem>({
   minWidth,
   minHeight,
   onActivate,
+  aspectRatio,
   onChange,
   onCommit,
 }: TileProps<Item>) {
@@ -87,6 +89,7 @@ export function Tile<Item extends TileItem>({
     canvas,
     minWidth,
     minHeight,
+    aspectRatio,
     onChange,
     onCommit,
   });

@@ -147,12 +147,171 @@
   .fabric {
     isolation: isolate;
     overflow: hidden;
+    outline: 2px dashed transparent;
+    outline-offset: -2px;
     background: var(--bg);
     cursor: grab;
+    transition:
+      outline-color 160ms var(--ease-out-expo),
+      box-shadow 160ms var(--ease-out-expo);
   }
 
   .fabric:active {
     cursor: grabbing;
+  }
+
+  .fabric[data-drop-active="true"] {
+    outline-color: oklch(var(--idle-channels) / 0.72);
+    box-shadow:
+      inset 0 0 0 8px oklch(var(--idle-channels) / 0.04),
+      inset 0 0 80px oklch(var(--idle-channels) / 0.08);
+    cursor: copy;
+  }
+
+  .image-drop-ghost {
+    display: grid;
+    width: 360px;
+    height: 240px;
+    place-content: center;
+    gap: 5px;
+    border: 2px dashed oklch(var(--idle-channels) / 0.82);
+    border-radius: 12px;
+    background:
+      linear-gradient(
+        145deg,
+        oklch(var(--idle-channels) / 0.16),
+        oklch(var(--surface-channels) / 0.86)
+      );
+    box-shadow:
+      0 0 0 6px oklch(var(--idle-channels) / 0.06),
+      0 0 42px oklch(var(--idle-channels) / 0.2);
+    color: var(--ink);
+    font-family: var(--font-mono);
+    text-align: center;
+    pointer-events: none;
+  }
+
+  .image-drop-ghost__icon {
+    margin-inline: auto;
+    color: var(--idle);
+    font-size: 28px;
+    line-height: 1;
+    text-shadow: 0 0 12px var(--idle-glow);
+  }
+
+  .image-drop-ghost strong {
+    font-size: 15px;
+    letter-spacing: -0.02em;
+    text-transform: lowercase;
+  }
+
+  .image-drop-ghost span:last-child {
+    color: var(--ink-dim);
+    font-size: 10px;
+    letter-spacing: 0.04em;
+  }
+
+  .image-tile {
+    transition:
+      border-color 160ms var(--ease-out-expo),
+      box-shadow 160ms var(--ease-out-expo);
+  }
+
+  .tile.image:hover .image-tile,
+  .tile.image:focus-within .image-tile,
+  .tile.image.is-resizing .image-tile {
+    border-color: oklch(var(--idle-channels) / 0.74);
+    box-shadow: 0 0 18px oklch(var(--idle-channels) / 0.18);
+  }
+
+  .image-tile__close {
+    position: absolute;
+    z-index: 3;
+    top: 8px;
+    right: 8px;
+    display: grid;
+    width: 24px;
+    height: 24px;
+    place-items: center;
+    border: 1px solid oklch(var(--ink-channels) / 0.16);
+    border-radius: 999px;
+    background: oklch(var(--bg-channels) / 0.82);
+    box-shadow: 0 4px 16px oklch(var(--bg-channels) / 0.42);
+    color: var(--ink);
+    line-height: 1;
+    opacity: 0;
+    transition:
+      opacity 120ms var(--ease-out-expo),
+      color 120ms var(--ease-out-expo),
+      border-color 120ms var(--ease-out-expo);
+  }
+
+  .tile.image:hover .image-tile__close,
+  .tile.image:focus-within .image-tile__close {
+    opacity: 1;
+  }
+
+  .image-tile__close:hover {
+    border-color: var(--error);
+    color: var(--error);
+  }
+
+  .image-tile__resize-hint {
+    position: absolute;
+    right: 10px;
+    bottom: 8px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: oklch(var(--bg-channels) / 0.78);
+    color: var(--ink-dim);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms var(--ease-out-expo);
+  }
+
+  .tile.image:hover .image-tile__resize-hint,
+  .tile.image.is-resizing .image-tile__resize-hint {
+    opacity: 1;
+  }
+
+  .tile.image .resize-handle::before,
+  .tile.image .resize-handle::after {
+    position: absolute;
+    right: 2px;
+    bottom: 2px;
+    width: 7px;
+    height: 1px;
+    background: oklch(var(--idle-channels) / 0.72);
+    content: "";
+    transform: rotate(-45deg);
+    transform-origin: center;
+  }
+
+  .tile.image .resize-handle::after {
+    right: 0;
+    bottom: 0;
+  }
+
+  .board-toast {
+    position: fixed;
+    z-index: 60;
+    bottom: 96px;
+    left: 50%;
+    max-width: min(34rem, calc(100vw - 2rem));
+    margin: 0;
+    padding: 8px 12px;
+    border: 1px solid oklch(var(--pinned-channels) / 0.7);
+    border-radius: 8px;
+    background: oklch(var(--surface-channels) / 0.96);
+    box-shadow: 0 10px 36px oklch(var(--bg-channels) / 0.5);
+    color: var(--pinned);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1.4;
+    pointer-events: none;
+    transform: translateX(-50%);
   }
 
   .fabric::before,
