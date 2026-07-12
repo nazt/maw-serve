@@ -99,14 +99,14 @@ The Cloudflare deployment contains **static UI assets only**. Census, usage, ver
 and terminal stream requests go directly from the viewer's browser to that viewer's own
 `maw-serve`; fleet data does not pass through Cloudflare.
 
-1. Build the UI and replace the `stoa.example.com` custom-domain placeholder in
-   [`wrangler.stoa.json`](./wrangler.stoa.json) with the domain Nat selects.
+1. Build the UI configured for `stoa.buildwithoracle.com` in
+   [`wrangler.stoa.json`](./wrangler.stoa.json).
 2. Start the local data server with that exact HTTPS origin allowlisted (comma-separate more
    than one origin when needed):
 
    ```bash
    MAW_SERVE_PORT=48900 \
-   MAW_SERVE_CORS_ORIGINS=https://stoa.example.com \
+   MAW_SERVE_CORS_ORIGINS=https://stoa.buildwithoracle.com \
    bun server-demo.ts
    ```
 
@@ -120,7 +120,7 @@ and terminal stream requests go directly from the viewer's browser to that viewe
 4. Open the hosted board and point it at the local server:
 
    ```text
-   https://stoa.example.com/api/agora/?host=http://localhost:48900
+   https://stoa.buildwithoracle.com/api/agora/?host=http://localhost:48900
    ```
 
 Host selection is resolved once per page load in this order: the `?host=` parameter, the

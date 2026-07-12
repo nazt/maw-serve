@@ -1,5 +1,6 @@
 {
   "name": "maw-serve-stoa",
+  "account_id": "a5eabdc2b11aae9bd5af46bd6a88179e",
   "compatibility_date": "2026-07-12",
   "main": "./worker/stoa-static.js",
   "assets": {
@@ -10,7 +11,7 @@
   },
   "routes": [
     {
-      "pattern": "stoa.example.com",
+      "pattern": "stoa.buildwithoracle.com",
       "custom_domain": true
     }
   ]
