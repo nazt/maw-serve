@@ -61,6 +61,7 @@ function Metric({ label, value, color = "var(--ink-dim)" }: MetricProps) {
 
 export function StatusBar({ items, usage, error = null, className = "" }: StatusBarProps) {
   const summary = summarizeFleet(items, usage);
+  const buildLabel = `${__STOA_BUILD__.branch} @ ${__STOA_BUILD__.commit} · ${__STOA_BUILD__.builder}`;
   const label = error
     ? "Fleet telemetry link interrupted"
     : `Fleet status: ${summary.active} active, ${summary.idle} idle, ${summary.stale} stale, ${summary.burnPerHour} tokens per hour, ${summary.accounts} accounts`;
@@ -71,23 +72,32 @@ export function StatusBar({ items, usage, error = null, className = "" }: Status
       aria-label={label}
       aria-live="polite"
     >
-      {error ? (
-        <span className="font-mono text-xs text-[var(--error)]">
-          telemetry interrupted · retrying
-        </span>
-      ) : (
-        <>
-          <Metric label="active" value={summary.active} color="var(--active)" />
-          <Metric label="idle" value={summary.idle} color="var(--idle)" />
-          <Metric label="stale" value={summary.stale} color="var(--stale)" />
-          <span className="h-3 w-px bg-[var(--line)]" aria-hidden="true" />
-          <Metric label="tok/h" value={compactNumber.format(summary.burnPerHour)} />
-          <Metric
-            label={summary.accounts === 1 ? "account" : "accounts"}
-            value={summary.accounts}
-          />
-        </>
-      )}
+      <div className="flex min-w-0 flex-1 items-center gap-4 overflow-hidden">
+        {error ? (
+          <span className="truncate font-mono text-xs text-[var(--error)]">
+            telemetry interrupted · retrying
+          </span>
+        ) : (
+          <>
+            <Metric label="active" value={summary.active} color="var(--active)" />
+            <Metric label="idle" value={summary.idle} color="var(--idle)" />
+            <Metric label="stale" value={summary.stale} color="var(--stale)" />
+            <span className="h-3 w-px bg-[var(--line)]" aria-hidden="true" />
+            <Metric label="tok/h" value={compactNumber.format(summary.burnPerHour)} />
+            <Metric
+              label={summary.accounts === 1 ? "account" : "accounts"}
+              value={summary.accounts}
+            />
+          </>
+        )}
+      </div>
+      <span
+        className="max-w-[48vw] shrink-0 truncate rounded border border-[var(--line)] px-1.5 py-0.5 font-mono text-[11px] leading-none tabular-nums text-[var(--ink-dim)]"
+        title={`${buildLabel} · built ${__STOA_BUILD__.buildTime}`}
+        aria-label={`Build ${buildLabel}`}
+      >
+        {buildLabel}
+      </span>
     </footer>
   );
 }

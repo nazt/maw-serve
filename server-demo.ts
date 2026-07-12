@@ -1,7 +1,10 @@
 import { unlinkSync } from "node:fs";
 
-const PORT = Number(process.env.MAW_SERVE_PORT ?? 4756);
+import { resolveBuildIdentity, type StoaBuildIdentity } from "./build-identity";
+
+const PORT = Number(process.env.MAW_SERVE_PORT ?? 48_901);
 const PUBLIC_DIR = `${import.meta.dir}/public`;
+const BUILD_IDENTITY_PATH = `${PUBLIC_DIR}/stoa-build.json`;
 const USAGE_URL = "https://argus.buildwithoracle.com/api/board-tile?window_h=6";
 const USAGE_CACHE_MS = 8_000;
 const CAPTURE_CACHE_MS = 2_000;
@@ -102,6 +105,32 @@ async function servePublicAsset(pathname: string): Promise<Response> {
 
 function serveIndex(): Response {
   return fileResponse("/api/agora/index.html", `${PUBLIC_DIR}/index.html`);
+}
+
+function isBuildIdentity(value: unknown): value is StoaBuildIdentity {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<StoaBuildIdentity>;
+  return [candidate.branch, candidate.commit, candidate.builder, candidate.buildTime]
+    .every((field) => typeof field === "string" && field.length > 0);
+}
+
+async function versionResponse(): Promise<Response> {
+  let identity: StoaBuildIdentity | null = null;
+  const file = Bun.file(BUILD_IDENTITY_PATH);
+  if (await file.exists()) {
+    try {
+      const candidate: unknown = await file.json();
+      if (isBuildIdentity(candidate)) identity = candidate;
+    } catch {
+      // A source checkout may not have been built yet; use runtime git metadata.
+    }
+  }
+
+  identity ??= resolveBuildIdentity({ cwd: import.meta.dir });
+  return Response.json(
+    { ...identity, servedFrom: PUBLIC_DIR },
+    { headers: { "cache-control": "no-store" } },
+  );
 }
 
 async function censusResponse(): Promise<Response> {
@@ -645,6 +674,7 @@ export async function handleRequest(req: Request): Promise<Response> {
 
   if (url.pathname === "/api/agora/census") return censusResponse();
   if (url.pathname === "/api/agora/usage") return usageResponse();
+  if (url.pathname === "/api/agora/version") return versionResponse();
   if (url.pathname === "/api/agora/capture") return captureResponse(url);
   if (url.pathname === "/api/agora/stream") return streamResponse(req, url);
   if (url.pathname === "/api/agora" || url.pathname === "/api/agora/") return serveIndex();
