@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
 
@@ -65,11 +66,27 @@ export function edgeCurve(
     x: (start.x + end.x) / 2 - (dy / distance) * bend,
     y: (start.y + end.y) / 2 + (dx / distance) * bend,
   };
-
   return {
     path: `M ${start.x} ${start.y} Q ${control.x} ${control.y} ${end.x} ${end.y}`,
     midpoint: curvePoint(start, control, end, 0.5),
   };
+}
+
+function usePrefersReducedMotion(): boolean {
+  const [reducedMotion, setReducedMotion] = useState(() => (
+    typeof window !== "undefined" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  ));
+
+  useEffect(() => {
+    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => setReducedMotion(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+
+  return reducedMotion;
 }
 
 function nodeCenter(node: EdgeNode, canvas: CanvasController): CanvasPoint {
@@ -234,6 +251,11 @@ export function NodeEdgeOverlay({
   onDelete,
 }: NodeEdgeOverlayProps) {
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
+  const [focusedEdgeId, setFocusedEdgeId] = useState<string | null>(null);
+  const [announcement, setAnnouncement] = useState("");
+  const previousEdgesRef = useRef<readonly NodeEdge[] | null>(null);
+  const edgeFocusRefs = useRef(new Map<string, HTMLButtonElement>());
+  const reducedMotion = usePrefersReducedMotion();
   const nodeIndex = useMemo(
     () => new Map(nodes.map((node) => [node.data.oracle, node])),
     [nodes],
@@ -243,7 +265,26 @@ export function NodeEdgeOverlay({
     if (selectedEdgeId && !edges.some((edge) => edge.id === selectedEdgeId)) {
       setSelectedEdgeId(null);
     }
-  }, [edges, selectedEdgeId]);
+    if (focusedEdgeId && !edges.some((edge) => edge.id === focusedEdgeId)) {
+      setFocusedEdgeId(null);
+    }
+  }, [edges, focusedEdgeId, selectedEdgeId]);
+
+  useEffect(() => {
+    const previousEdges = previousEdgesRef.current;
+    previousEdgesRef.current = edges;
+    if (previousEdges === null) return;
+
+    const previousIds = new Set(previousEdges.map((edge) => edge.id));
+    const currentIds = new Set(edges.map((edge) => edge.id));
+    const connected = edges.find((edge) => !previousIds.has(edge.id));
+    const disconnected = previousEdges.find((edge) => !currentIds.has(edge.id));
+    if (connected) {
+      setAnnouncement(`Connected ${connected.from} and ${connected.to}.`);
+    } else if (disconnected) {
+      setAnnouncement(`Disconnected ${disconnected.from} and ${disconnected.to}.`);
+    }
+  }, [edges]);
 
   const draftNode = draft ? nodeIndex.get(draft.from) : null;
   const draftCurve = draft && draftNode
@@ -261,6 +302,67 @@ export function NodeEdgeOverlay({
     }];
   });
 
+  const selectEdge = useCallback((id: string) => {
+    setSelectedEdgeId(id);
+    setFocusedEdgeId(id);
+  }, []);
+
+  const focusEdge = useCallback((id: string) => {
+    selectEdge(id);
+    edgeFocusRefs.current.get(id)?.focus();
+  }, [selectEdge]);
+
+  const focusRelativeEdge = useCallback((id: string, offset: number) => {
+    const currentIndex = visibleEdges.findIndex(({ edge }) => edge.id === id);
+    if (currentIndex < 0 || visibleEdges.length === 0) return;
+    const nextIndex = (currentIndex + offset + visibleEdges.length) % visibleEdges.length;
+    focusEdge(visibleEdges[nextIndex].edge.id);
+  }, [focusEdge, visibleEdges]);
+
+  const handleEdgeKeyDown = useCallback((
+    edge: NodeEdge,
+    event: ReactKeyboardEvent<HTMLElement>,
+  ) => {
+    const direction = event.key === "ArrowRight" || event.key === "ArrowDown"
+      ? 1
+      : event.key === "ArrowLeft" || event.key === "ArrowUp"
+        ? -1
+        : 0;
+    if (direction !== 0) {
+      event.preventDefault();
+      event.stopPropagation();
+      focusRelativeEdge(edge.id, direction);
+      return;
+    }
+    if (event.key === "Home" || event.key === "End") {
+      event.preventDefault();
+      event.stopPropagation();
+      const target = event.key === "Home" ? visibleEdges[0] : visibleEdges.at(-1);
+      if (target) focusEdge(target.edge.id);
+      return;
+    }
+    if (event.key === "Delete" || event.key === "Backspace") {
+      event.preventDefault();
+      event.stopPropagation();
+      const currentIndex = visibleEdges.findIndex(({ edge: candidate }) => (
+        candidate.id === edge.id
+      ));
+      const nextEdge = visibleEdges.length > 1
+        ? visibleEdges[(currentIndex + 1) % visibleEdges.length]?.edge
+        : null;
+      setSelectedEdgeId(null);
+      setFocusedEdgeId(null);
+      onDelete(edge.id);
+      if (nextEdge) window.requestAnimationFrame(() => focusEdge(nextEdge.id));
+      return;
+    }
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      event.stopPropagation();
+      focusEdge(edge.id);
+    }
+  }, [focusEdge, focusRelativeEdge, onDelete, visibleEdges]);
+
   return (
     <>
       <svg
@@ -270,30 +372,50 @@ export function NodeEdgeOverlay({
       >
         {visibleEdges.map(({ edge, from, to, curve }) => {
           const selected = selectedEdgeId === edge.id;
+          const focused = focusedEdgeId === edge.id;
           return (
             <g
               key={edge.id}
               className="node-edge"
               data-edge-id={edge.id}
-              data-linked={linkedEdgeId === edge.id || undefined}
+              data-linked={!reducedMotion && linkedEdgeId === edge.id || undefined}
               data-selected={selected || undefined}
             >
               <path className="node-edge__line" d={curve.path} />
+              {focused ? (
+                <>
+                  <path
+                    d={curve.path}
+                    fill="none"
+                    stroke="var(--bg)"
+                    strokeWidth={7}
+                    strokeLinecap="round"
+                    vectorEffect="non-scaling-stroke"
+                    pointerEvents="none"
+                    aria-hidden="true"
+                    data-edge-focus-ring="backdrop"
+                  />
+                  <path
+                    d={curve.path}
+                    fill="none"
+                    stroke="var(--active)"
+                    strokeWidth={3}
+                    strokeLinecap="round"
+                    vectorEffect="non-scaling-stroke"
+                    pointerEvents="none"
+                    aria-hidden="true"
+                    data-edge-focus-ring="indicator"
+                  />
+                </>
+              ) : null}
               <path
                 className="node-edge__hit"
                 d={curve.path}
-                role="button"
-                tabIndex={0}
-                aria-label={`Link from ${from.data.oracle} to ${to.data.oracle}. Select to remove.`}
+                aria-hidden="true"
                 onPointerDown={(event) => event.stopPropagation()}
                 onClick={(event) => {
                   event.stopPropagation();
-                  setSelectedEdgeId((current) => current === edge.id ? null : edge.id);
-                }}
-                onKeyDown={(event) => {
-                  if (event.key !== "Enter" && event.key !== " ") return;
-                  event.preventDefault();
-                  setSelectedEdgeId((current) => current === edge.id ? null : edge.id);
+                  focusEdge(edge.id);
                 }}
               />
             </g>
@@ -310,9 +432,37 @@ export function NodeEdgeOverlay({
             className="node-edge__control"
             style={{ left: curve.midpoint.x, top: curve.midpoint.y }}
           >
-            <span className="node-edge__label">
-              {from.data.oracle} ↔ {to.data.oracle}
-            </span>
+            <button
+              type="button"
+              className="node-edge__label"
+              style={{ border: 0, pointerEvents: "auto" }}
+              ref={(element) => {
+                if (element) edgeFocusRefs.current.set(edge.id, element);
+                else edgeFocusRefs.current.delete(edge.id);
+              }}
+              data-edge-focus-id={edge.id}
+              aria-label={`Link from ${from.data.oracle} to ${to.data.oracle}. Press Delete to disconnect. Use arrow keys to move between links.`}
+              aria-keyshortcuts="Delete Backspace ArrowLeft ArrowRight ArrowUp ArrowDown Home End"
+              aria-pressed={selectedEdgeId === edge.id}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                focusEdge(edge.id);
+              }}
+              onFocus={() => selectEdge(edge.id)}
+              onBlur={() => setFocusedEdgeId((current) => (
+                current === edge.id ? null : current
+              ))}
+              onKeyDown={(event) => handleEdgeKeyDown(edge, event)}
+            >
+              {from.data.oracle}{" "}
+              {reducedMotion ? (
+                <span aria-hidden="true" data-edge-direction="static">»</span>
+              ) : (
+                <span aria-hidden="true">↔</span>
+              )}{" "}
+              {to.data.oracle}
+            </button>
             {selectedEdgeId === edge.id ? (
               <button
                 type="button"
@@ -331,6 +481,15 @@ export function NodeEdgeOverlay({
           </div>
         ))}
       </div>
+      <p
+        className="sr-only"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        data-node-edge-announcer
+      >
+        {announcement}
+      </p>
     </>
   );
 }
