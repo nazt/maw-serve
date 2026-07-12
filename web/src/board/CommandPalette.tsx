@@ -310,6 +310,9 @@ export default function CommandPalette({
         : [...oracles, ...spaces, ...peers]
   ), [oracles, peers, preferredKind, spaces]);
   const active = navigable.find((item) => item.id === activeId) ?? navigable[0] ?? null;
+  const confirmingSpace = confirmingSpaceId
+    ? items.find((item): item is SpacePaletteItem => item.kind === "space" && item.id === confirmingSpaceId) ?? null
+    : null;
 
   const show = useCallback((kind: PaletteKind | null = null) => {
     if (closeTimerRef.current !== null) {
@@ -748,7 +751,6 @@ export default function CommandPalette({
                         item={item}
                         active={active?.id === item.id}
                         onHighlight={() => {
-                          setConfirmingSpaceId(null);
                           setConfirmingPeerId(null);
                           setActiveId(item.id);
                         }}
@@ -766,7 +768,6 @@ export default function CommandPalette({
                         item={item}
                         active={active?.id === item.id}
                         onHighlight={() => {
-                          setConfirmingSpaceId(null);
                           setConfirmingPeerId(null);
                           setActiveId(item.id);
                         }}
@@ -784,7 +785,6 @@ export default function CommandPalette({
                         item={item}
                         active={active?.id === item.id}
                         onHighlight={() => {
-                          setConfirmingSpaceId(null);
                           setConfirmingPeerId(null);
                           setActiveId(item.id);
                         }}
@@ -832,17 +832,6 @@ export default function CommandPalette({
                     </header>
                     <SpaceMiniMap item={active} />
                     <p>{active.layout.length} windows · {active.oracleNames.length} oracle panes · zero preview streams</p>
-                    {confirmingSpaceId === active.id ? (
-                      <div className="palette-confirm" role="alert">
-                        <strong>
-                          {active.name.toLowerCase()} — {active.liveCount + active.pollCount} terminals · pull {active.liveCount} live + {active.pollCount} polled?
-                        </strong>
-                        <span>
-                          <button type="button" onClick={() => void commit(active)}>Pull space</button>
-                          <button type="button" onClick={() => setConfirmingSpaceId(null)}>Cancel</button>
-                        </span>
-                      </div>
-                    ) : null}
                   </>
                 ) : active?.kind === "peer" ? (
                   <>
@@ -881,6 +870,17 @@ export default function CommandPalette({
                 ) : (
                   <p className="palette-preview__empty">Choose a fleet target to preview</p>
                 )}
+                {confirmingSpace ? (
+                  <div className="palette-confirm" role="alert">
+                    <strong>
+                      {confirmingSpace.name.toLowerCase()} — {confirmingSpace.liveCount + confirmingSpace.pollCount} terminals · pull {confirmingSpace.liveCount} live + {confirmingSpace.pollCount} polled?
+                    </strong>
+                    <span>
+                      <button type="button" onClick={() => void commit(confirmingSpace)}>Pull space</button>
+                      <button type="button" onClick={() => setConfirmingSpaceId(null)}>Cancel</button>
+                    </span>
+                  </div>
+                ) : null}
               </aside>
             </div>
             <footer>
