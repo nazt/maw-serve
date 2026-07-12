@@ -4,6 +4,7 @@ import type { OracleStatus, OracleTileItem } from "./useFleet";
 export interface OracleTileContentProps {
   item: OracleTileItem;
   className?: string;
+  actionsTabIndex?: number;
 }
 
 export function oracleHasConnectAffordance(item: OracleTileItem): boolean {
@@ -32,7 +33,11 @@ function heatState(heat: number): "cool" | "warm" | "hot" {
   return "cool";
 }
 
-export function OracleTileContent({ item, className = "" }: OracleTileContentProps) {
+export function OracleTileContent({
+  item,
+  className = "",
+  actionsTabIndex,
+}: OracleTileContentProps) {
   const { oracle, status, modelTier, idleSec, annotation, heat, pinned } = item.data;
   const compact = item.data.density === "compact";
   const safeHeat = Math.min(100, Math.max(0, Number.isFinite(heat) ? heat : 0));
@@ -115,7 +120,7 @@ export function OracleTileContent({ item, className = "" }: OracleTileContentPro
             <span
               className={`oracle-annotation truncate text-xs leading-snug text-[var(--ink-dim)] ${annotationNeedsDisclosure ? "cursor-help" : ""}`}
               title={annotationNeedsDisclosure ? annotationText : undefined}
-              tabIndex={annotationNeedsDisclosure ? 0 : undefined}
+              tabIndex={annotationNeedsDisclosure ? actionsTabIndex ?? 0 : undefined}
               aria-label={annotationNeedsDisclosure ? `Full annotation: ${annotationText}` : undefined}
             >
               {annotationText}

@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 
 import { Fabric } from "./canvas/Fabric";
@@ -101,6 +102,11 @@ import {
   type OracleTileItem,
 } from "./fleet/useFleet";
 import Tile from "./tiles/Tile";
+import {
+  nextRovingTileId,
+  rovingActionTabIndex,
+  rovingTileTabIndex,
+} from "./tiles/rovingFocus";
 import MirrorPageView from "./mirror/MirrorPageView";
 import SpacePageView from "./mirror/SpacePageView";
 import {
@@ -811,6 +817,7 @@ function BoardPageView({
   const [layoutEpoch, setLayoutEpoch] = useState(0);
   const [persistenceWarning, setPersistenceWarning] = useState<string | null>(null);
   const [selectedOracleId, setSelectedOracleId] = useState<string | null>(null);
+  const [rovingOracleId, setRovingOracleId] = useState<string | null>(null);
   const [landedItemId, setLandedItemId] = useState<string | null>(null);
   const undoLandingRef = useRef<UndoLanding | null>(null);
   const landedTimerRef = useRef<number | null>(null);
@@ -847,6 +854,15 @@ function BoardPageView({
       ...densityAwareFleetGeometry(item, fleetGeometry[item.id]),
     }))
   ), [fleetGeometry, fleetTiles]);
+  useEffect(() => {
+    const available = new Set(positionedFleetTiles.map((item) => item.id));
+    setRovingOracleId((current) => (
+      current && available.has(current) ? current : positionedFleetTiles[0]?.id ?? null
+    ));
+    setSelectedOracleId((current) => (
+      current && available.has(current) ? current : null
+    ));
+  }, [positionedFleetTiles]);
   const connectedOracleNames = useMemo(() => new Set(
     nodeGraph.edges.flatMap((edge) => [edge.from, edge.to]),
   ), [nodeGraph.edges]);
@@ -1117,9 +1133,47 @@ function BoardPageView({
   }, []);
 
   const activateTile = useCallback((item: AppTileItem) => {
-    if (item.kind === "oracle") raiseOracle(item);
-    else raiseUserItem(item.id);
+    if (item.kind === "oracle") {
+      raiseOracle(item);
+      setRovingOracleId(item.id);
+      setSelectedOracleId(item.id);
+    } else {
+      raiseUserItem(item.id);
+    }
   }, [raiseOracle, raiseUserItem]);
+
+  const handleOracleTileKeyDown = useCallback((
+    item: OracleTileItem,
+    event: ReactKeyboardEvent<HTMLElement>,
+  ) => {
+    if (
+      event.target !== event.currentTarget ||
+      event.altKey ||
+      event.ctrlKey ||
+      event.metaKey
+    ) return;
+    const direction = event.key === "ArrowLeft"
+      ? "left"
+      : event.key === "ArrowRight"
+        ? "right"
+        : event.key === "ArrowUp"
+          ? "up"
+          : event.key === "ArrowDown"
+            ? "down"
+            : null;
+    if (!direction) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    const nextId = nextRovingTileId(positionedFleetTiles, item.id, direction);
+    if (!nextId) return;
+    const next = positionedFleetTiles.find((candidate) => candidate.id === nextId);
+    if (!next) return;
+    activateTile(next);
+    event.currentTarget.ownerDocument
+      .querySelector<HTMLElement>(`[data-tile-id="${CSS.escape(nextId)}"]`)
+      ?.focus({ preventScroll: true });
+  }, [activateTile, positionedFleetTiles]);
 
   const addNoteAt = useCallback((point: CanvasPoint) => {
     const note = {
@@ -1401,6 +1455,7 @@ function BoardPageView({
 
   const focusOracle = useCallback((oracle: OracleTileItem) => {
     raiseOracle(oracle);
+    setRovingOracleId(oracle.id);
     setSelectedOracleId(oracle.id);
     canvas.focusOn({ x: oracle.x, y: oracle.y, w: oracle.w, h: oracle.h });
   }, [canvas, raiseOracle]);
@@ -2010,6 +2065,12 @@ function BoardPageView({
         {allTiles.map((item) => {
           const pane = item.kind === "oracle" ? terminalPane(census, item) : null;
           const selected = item.kind === "oracle" && item.id === selectedOracleId;
+          const tileTabIndex = item.kind === "oracle"
+            ? rovingTileTabIndex(item.id, rovingOracleId)
+            : undefined;
+          const actionTabIndex = item.kind === "oracle"
+            ? rovingActionTabIndex(item.id, selectedOracleId)
+            : undefined;
           return (
             <Tile
               key={`${layoutEpoch}:${item.id}`}
@@ -2036,6 +2097,15 @@ function BoardPageView({
                 : item.kind === "space-import" && !item.collapsed
                   ? item.expandedSize.w / item.expandedSize.h
                   : null}
+              tabIndex={tileTabIndex}
+              resizeTabIndex={actionTabIndex}
+              ariaLabel={item.kind === "oracle"
+                ? `Oracle ${item.data.oracle}, ${item.data.status} status`
+                : undefined}
+              ariaCurrent={selected}
+              onKeyDown={item.kind === "oracle"
+                ? (event) => handleOracleTileKeyDown(item, event)
+                : undefined}
               className={`${tileClassName(item)} ${
                 selected
                   ? "selected ring-2 ring-[var(--idle)] ring-offset-2 ring-offset-[var(--bg)] shadow-[0_0_14px_var(--idle-glow)]"
@@ -2083,13 +2153,14 @@ function BoardPageView({
                     handleOracleDoubleClick(item);
                   }}
                 >
-                  <OracleTileContent item={item} />
+                  <OracleTileContent item={item} actionsTabIndex={actionTabIndex} />
                   {oracleHasConnectAffordance(item) ? (
                     <NodeConnectHandle
                       nodeId={item.data.oracle}
                       nodeName={item.data.oracle}
                       connected={connectedOracleNames.has(item.data.oracle)}
                       zoom={canvas.zoom}
+                      tabIndex={actionTabIndex}
                       events={edgeDrag.events}
                     />
                   ) : null}
@@ -2097,6 +2168,7 @@ function BoardPageView({
                     <a
                       className="absolute right-1.5 top-1.5 z-20 grid h-6 w-6 place-items-center rounded border border-[var(--line)] bg-[var(--surface-2)] font-mono text-xs text-[var(--ink-dim)] hover:border-[var(--idle)] hover:text-[var(--ink)]"
                       href={boardPageHref(oracleDisplayPages.get(normalizeOracleHandle(item.data.oracle))!)}
+                      tabIndex={actionTabIndex}
                       aria-label={`Open ${item.data.oracle} physical display mirror`}
                       title="Open physical display mirror"
                       onPointerDown={(event) => event.stopPropagation()}
