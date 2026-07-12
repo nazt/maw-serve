@@ -6,8 +6,13 @@ import { useEffect, useRef, useState } from "react";
 import { apiFetch, apiUrlWithParams, API_ENDPOINTS } from "../clients/api";
 import type { Theme } from "../theme";
 import {
+  DEFAULT_TERMINAL_ZOOM,
+  MAX_TERMINAL_ZOOM,
+  MIN_TERMINAL_ZOOM,
   parseTerminalMeta,
-  terminalFontSize,
+  parseTerminalZoom,
+  stepTerminalZoom,
+  terminalDisplayGrid,
   type TerminalSourceDimensions,
 } from "./terminalSizing";
 
@@ -37,6 +42,27 @@ type ConnectionStatus = "connecting" | "live" | "reconnecting" | "polling" | "er
 
 const STREAM_LINES = 120;
 const MAX_STREAM_FAILURES = 3;
+const TERMINAL_ZOOM_STORAGE_PREFIX = "stoa.terminal-zoom.v1:";
+
+function terminalZoomStorageKey(itemId: string): string {
+  return `${TERMINAL_ZOOM_STORAGE_PREFIX}${encodeURIComponent(itemId)}`;
+}
+
+function loadTerminalZoom(itemId: string): number {
+  try {
+    return parseTerminalZoom(window.localStorage.getItem(terminalZoomStorageKey(itemId)));
+  } catch {
+    return DEFAULT_TERMINAL_ZOOM;
+  }
+}
+
+function saveTerminalZoom(itemId: string, zoomFactor: number): void {
+  try {
+    window.localStorage.setItem(terminalZoomStorageKey(itemId), String(zoomFactor));
+  } catch {
+    // A blocked storage write should not affect the live terminal.
+  }
+}
 
 function captureText(payload: unknown): string {
   if (typeof payload === "string") return payload;
@@ -127,10 +153,15 @@ export function TerminalTile({
   const [newLineCount, setNewLineCount] = useState(0);
   const [selectMode, setSelectMode] = useState(false);
   const [temporarySelect, setTemporarySelect] = useState(false);
+  const [zoomFactor, setZoomFactor] = useState(() => loadTerminalZoom(item.id));
+  const frameRef = useRef<HTMLDivElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
+  const zoomFactorRef = useRef(zoomFactor);
+  const resizeTerminalRef = useRef<() => void>(() => {});
   const resumeFollowRef = useRef<() => void>(() => {});
   const selecting = selectMode || temporarySelect;
+  const zoomPercent = Math.round(zoomFactor * 100);
 
   useEffect(() => {
     const stopTemporarySelect = () => setTemporarySelect(false);
@@ -164,8 +195,9 @@ export function TerminalTile({
   }, [selectMode, temporarySelect]);
 
   useEffect(() => {
+    const frame = frameRef.current;
     const host = hostRef.current;
-    if (!host) return;
+    if (!frame || !host) return;
 
     let disposed = false;
     let eventSource: EventSource | null = null;
@@ -192,10 +224,14 @@ export function TerminalTile({
       scrollback: 4_000,
       theme: fleetTerminalTheme(),
     });
-    terminalRef.current = terminal;
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
     terminal.open(host);
+    // Screen-reader rows are intentionally wider than the rendered grid in
+    // xterm. Keep that invisible layer from creating a false horizontal range;
+    // the scroll frame should grow only when terminal zoom expands the host.
+    const accessibilityLayer = host.querySelector<HTMLElement>(".xterm-accessibility");
+    if (accessibilityLayer) accessibilityLayer.style.overflow = "hidden";
     terminalRef.current = terminal;
 
     const flushWrites = () => {
@@ -266,20 +302,42 @@ export function TerminalTile({
     });
 
     const resizeTerminal = () => {
-      if (disposed || host.clientWidth === 0 || host.clientHeight === 0) return;
+      if (disposed || frame.clientWidth === 0 || frame.clientHeight === 0) return;
       const shouldFollow = following;
       try {
         if (sourceDimensions) {
-          const fontSize = terminalFontSize(host.clientWidth, sourceDimensions.cols);
+          const viewport = host.querySelector<HTMLElement>(".xterm-viewport");
+          const scrollbarWidth = viewport
+            ? Math.max(0, host.clientWidth - viewport.clientWidth)
+            : 0;
+          const fitWidth = Math.max(1, frame.clientWidth - scrollbarWidth);
+          const grid = terminalDisplayGrid(
+            fitWidth,
+            frame.clientHeight,
+            sourceDimensions.cols,
+            zoomFactorRef.current,
+          );
+          const expandedWidth = zoomFactorRef.current > 1
+            ? Math.ceil(fitWidth * zoomFactorRef.current + scrollbarWidth)
+            : frame.clientWidth;
+          host.style.width = `${expandedWidth}px`;
           host.dataset.sourceCols = String(sourceDimensions.cols);
           host.dataset.sourceRows = String(sourceDimensions.rows);
-          host.dataset.terminalFontSize = String(fontSize);
-          if (terminal.options.fontSize !== fontSize) terminal.options.fontSize = fontSize;
-          if (
-            terminal.cols !== sourceDimensions.cols ||
-            terminal.rows !== sourceDimensions.rows
-          ) {
-            terminal.resize(sourceDimensions.cols, sourceDimensions.rows);
+          host.dataset.terminalFontSize = String(grid.fontSize);
+          host.dataset.terminalZoom = String(zoomFactorRef.current);
+          if (terminal.options.fontSize !== grid.fontSize) {
+            terminal.options.fontSize = grid.fontSize;
+          }
+          // FitAddon measures xterm's real rendered cell height, which includes
+          // font metrics beyond the configured lineHeight multiplier. Use that
+          // measured row count when available while keeping source columns fixed.
+          const measuredRows = fitAddon.proposeDimensions()?.rows;
+          const displayRows = measuredRows && measuredRows > 0
+            ? measuredRows
+            : grid.rows;
+          host.dataset.displayRows = String(displayRows);
+          if (terminal.cols !== grid.cols || terminal.rows !== displayRows) {
+            terminal.resize(grid.cols, displayRows);
           }
         } else {
           fitAddon.fit();
@@ -293,9 +351,10 @@ export function TerminalTile({
         // A resize can race the tile being removed from the canvas.
       }
     };
+    resizeTerminalRef.current = resizeTerminal;
     const fitFrame = window.requestAnimationFrame(resizeTerminal);
     const resizeObserver = new ResizeObserver(resizeTerminal);
-    resizeObserver.observe(host);
+    resizeObserver.observe(frame);
 
     const onMotionPreference = () => {
       terminal.options.cursorBlink = !reducedMotion.matches;
@@ -391,10 +450,17 @@ export function TerminalTile({
       scrollDisposable.dispose();
       reducedMotion.removeEventListener("change", onMotionPreference);
       resumeFollowRef.current = () => {};
+      if (resizeTerminalRef.current === resizeTerminal) resizeTerminalRef.current = () => {};
       if (terminalRef.current === terminal) terminalRef.current = null;
       terminal.dispose();
     };
   }, [item.data.session, item.data.window, pollIntervalMs]);
+
+  useEffect(() => {
+    zoomFactorRef.current = zoomFactor;
+    saveTerminalZoom(item.id, zoomFactor);
+    resizeTerminalRef.current();
+  }, [item.id, zoomFactor]);
 
   useEffect(() => {
     if (terminalRef.current) terminalRef.current.options.theme = fleetTerminalTheme();
@@ -414,6 +480,44 @@ export function TerminalTile({
         </strong>
         <span className="max-w-[45%] truncate text-[10px] text-[var(--ink-dim)]">
           {item.data.session}:{item.data.window}
+        </span>
+        <span
+          className="flex h-5 shrink-0 items-stretch overflow-hidden rounded border border-[var(--line)] bg-[var(--terminal-surface)]"
+          role="group"
+          aria-label={`${item.data.oracle} terminal zoom`}
+        >
+          <button
+            type="button"
+            className="grid w-5 place-items-center text-xs text-[var(--ink-dim)] hover:bg-[var(--surface-2)] hover:text-[var(--ink)] focus-visible:z-10 focus-visible:outline focus-visible:outline-1 focus-visible:outline-[var(--idle)] disabled:cursor-not-allowed disabled:opacity-40"
+            aria-label="Zoom out terminal"
+            title="Zoom out terminal"
+            disabled={zoomFactor <= MIN_TERMINAL_ZOOM}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={() => setZoomFactor((current) => stepTerminalZoom(current, -1))}
+          >
+            −
+          </button>
+          <button
+            type="button"
+            className="min-w-10 border-x border-[var(--line)] px-1 text-[9px] font-semibold text-[var(--ink-dim)] hover:bg-[var(--surface-2)] hover:text-[var(--ink)] focus-visible:z-10 focus-visible:outline focus-visible:outline-1 focus-visible:outline-[var(--idle)]"
+            aria-label={`Reset terminal zoom to fit width, currently ${zoomPercent}%`}
+            title="Fit terminal width"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={() => setZoomFactor(DEFAULT_TERMINAL_ZOOM)}
+          >
+            {zoomPercent}%
+          </button>
+          <button
+            type="button"
+            className="grid w-5 place-items-center text-xs text-[var(--ink-dim)] hover:bg-[var(--surface-2)] hover:text-[var(--ink)] focus-visible:z-10 focus-visible:outline focus-visible:outline-1 focus-visible:outline-[var(--idle)] disabled:cursor-not-allowed disabled:opacity-40"
+            aria-label="Zoom in terminal"
+            title="Zoom in terminal"
+            disabled={zoomFactor >= MAX_TERMINAL_ZOOM}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={() => setZoomFactor((current) => stepTerminalZoom(current, 1))}
+          >
+            +
+          </button>
         </span>
         <button
           type="button"
@@ -456,6 +560,12 @@ export function TerminalTile({
         }}
         onWheel={(event) => {
           event.stopPropagation();
+          const horizontalDelta = event.deltaX || (event.shiftKey ? event.deltaY : 0);
+          if (horizontalDelta !== 0) {
+            event.preventDefault();
+            frameRef.current?.scrollBy({ left: horizontalDelta });
+            return;
+          }
           if (selecting) return;
           const direction = Math.sign(event.deltaY);
           if (direction === 0) return;
@@ -463,7 +573,12 @@ export function TerminalTile({
           terminalRef.current?.scrollLines(direction * lines);
         }}
       >
-        <div ref={hostRef} className="terminal-tile__viewport h-full" />
+        <div
+          ref={frameRef}
+          className="terminal-tile__scroll h-full overflow-x-auto overflow-y-hidden"
+        >
+          <div ref={hostRef} className="terminal-tile__viewport h-full min-w-full" />
+        </div>
         {!selecting ? (
           <div
             className="absolute inset-2 z-10 cursor-grab touch-none"

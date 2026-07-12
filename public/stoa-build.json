@@ -1,6 +1,6 @@
 {
-  "branch": "agents/stoa-two-themes",
-  "commit": "0bacb92",
-  "builder": "stoa-css",
-  "buildTime": "2026-07-12T07:59:16.288Z"
+  "branch": "agents/stoa-term-zoom",
+  "commit": "d75697e",
+  "builder": "stoa-term-zoom",
+  "buildTime": "2026-07-12T08:29:52.799Z"
 }
