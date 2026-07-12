@@ -661,6 +661,28 @@ function finiteIdle(value: number | null | undefined): number {
   return Number.isFinite(idle) && idle >= 0 ? idle : Number.POSITIVE_INFINITY;
 }
 
+function densityAwareFleetGeometry(
+  item: OracleTileItem,
+  geometry: PersistedGeometry | undefined,
+): PersistedGeometry | undefined {
+  if (!geometry) return undefined;
+  if (
+    item.data.density !== "compact" ||
+    geometry.w !== 210 ||
+    geometry.h !== 96
+  ) {
+    return geometry;
+  }
+
+  return {
+    x: item.x,
+    y: item.y,
+    w: item.w,
+    h: item.h,
+    ...(Number.isFinite(geometry.zIndex) ? { zIndex: geometry.zIndex } : {}),
+  };
+}
+
 function idleDetail(value: number | null): string {
   if (value === null || !Number.isFinite(value) || value < 0) return "—";
   if (value <= 5) return "live";
@@ -769,6 +791,7 @@ function BoardPageView({
   const oraclePressRef = useRef<OraclePress | null>(null);
   const jumpCursorRef = useRef<string | null>(null);
   const attentionCursorRef = useRef<string | null>(null);
+  const densityMigrationCompleteRef = useRef(false);
   const topZRef = useRef(restoredItems.reduce(
     (top, item) => Math.max(top, Number(item.zIndex) || USER_ITEM_MIN_Z),
     USER_ITEM_MIN_Z - 1,
@@ -791,7 +814,10 @@ function BoardPageView({
   );
   const initialFitComplete = useRef(restoredState.restored);
   const positionedFleetTiles = useMemo<OracleTileItem[]>(() => (
-    fleetTiles.map((item) => ({ ...item, ...fleetGeometry[item.id] }))
+    fleetTiles.map((item) => ({
+      ...item,
+      ...densityAwareFleetGeometry(item, fleetGeometry[item.id]),
+    }))
   ), [fleetGeometry, fleetTiles]);
   const connectedOracleNames = useMemo(() => new Set(
     nodeGraph.edges.flatMap((edge) => [edge.from, edge.to]),
@@ -891,6 +917,31 @@ function BoardPageView({
   }, []);
 
   useEffect(() => cancelOracleClick, [cancelOracleClick]);
+
+  useEffect(() => {
+    if (densityMigrationCompleteRef.current || fleetTiles.length === 0) return;
+    densityMigrationCompleteRef.current = true;
+
+    let changed = false;
+    const next = { ...fleetGeometry };
+    for (const item of fleetTiles) {
+      const current = fleetGeometry[item.id];
+      const migrated = densityAwareFleetGeometry(item, current);
+      if (current && migrated && migrated !== current) {
+        next[item.id] = migrated;
+        changed = true;
+      }
+    }
+    if (!changed) return;
+
+    setFleetGeometry(next);
+    const migratedTiles = fleetTiles.map((item) => ({
+      ...item,
+      ...densityAwareFleetGeometry(item, next[item.id]),
+    }));
+    const frame = window.requestAnimationFrame(() => canvas.fit(migratedTiles));
+    return () => window.cancelAnimationFrame(frame);
+  }, [canvas, fleetGeometry, fleetTiles]);
 
   useEffect(() => () => {
     if (landedTimerRef.current !== null) window.clearTimeout(landedTimerRef.current);
@@ -1887,8 +1938,20 @@ function BoardPageView({
               siblings={allTiles}
               canvas={canvas}
               style={{ zIndex: tileZIndex(item) }}
-              minWidth={item.kind === "image" ? 64 : item.kind === "space-import" ? 240 : undefined}
-              minHeight={item.kind === "image" ? 48 : item.kind === "space-import" ? SPACE_GROUP_HEADER_HEIGHT : undefined}
+              minWidth={item.kind === "image"
+                ? 64
+                : item.kind === "space-import"
+                  ? 240
+                  : item.kind === "oracle" && item.data.density === "compact"
+                    ? 140
+                    : undefined}
+              minHeight={item.kind === "image"
+                ? 48
+                : item.kind === "space-import"
+                  ? SPACE_GROUP_HEADER_HEIGHT
+                  : item.kind === "oracle" && item.data.density === "compact"
+                    ? 40
+                    : undefined}
               aspectRatio={item.kind === "image"
                 ? imageAspectRatio(item)
                 : item.kind === "space-import" && !item.collapsed
@@ -1917,6 +1980,7 @@ function BoardPageView({
                   className="oracle-tile relative h-full"
                   data-attention={item.attention.level}
                   data-connecting={edgeDrag.draft?.from === item.data.oracle || undefined}
+                  data-density={item.data.density}
                   data-node-connect-target={item.data.oracle}
                   title="Double-click to open terminal preview"
                   onPointerDown={(event) => {
