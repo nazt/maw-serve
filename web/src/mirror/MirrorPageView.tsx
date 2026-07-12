@@ -184,6 +184,12 @@ export default function MirrorPageView({
     }));
   }, []);
 
+  const autoSizeTerminal = useCallback((id: string, size: { w: number; h: number }) => {
+    setTerminalTiles((current) => current.map((item) => (
+      item.id === id ? { ...item, w: size.w, h: size.h } : item
+    )));
+  }, []);
+
   const raise = useCallback((id: string) => {
     const zIndex = ++topZRef.current;
     setGeometry((current) => current[id]
@@ -353,6 +359,7 @@ export default function MirrorPageView({
               <TerminalTile
                 item={item}
                 theme={theme}
+                onSourceSize={autoSizeTerminal}
                 onClose={(id) => setTerminalTiles((current) => current.filter((tile) => tile.id !== id))}
               />
             )}

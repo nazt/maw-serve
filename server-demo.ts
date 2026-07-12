@@ -212,6 +212,11 @@ function serveIndex(): Response {
   return fileResponse("/api/agora/index.html", `${PUBLIC_DIR}/index.html`);
 }
 
+function wantsApiRepresentation(req: Request): boolean {
+  const accept = req.headers.get("accept")?.toLowerCase() ?? "";
+  return accept.includes("text/event-stream") || accept.includes("application/json");
+}
+
 function isBuildIdentity(value: unknown): value is StoaBuildIdentity {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Partial<StoaBuildIdentity>;
@@ -1128,6 +1133,9 @@ export async function handleRequest(
   if (url.pathname === "/api/agora" || url.pathname === "/api/agora/") return respond(serveIndex());
   if (url.pathname.startsWith("/api/agora/") && /\.[^/]+$/.test(url.pathname)) {
     return respond(await servePublicAsset(url.pathname));
+  }
+  if (url.pathname.startsWith("/api/agora/") && wantsApiRepresentation(req)) {
+    return respond(Response.json({ error: "api route not found" }, { status: 404 }));
   }
   if (url.pathname.startsWith("/api/agora/")) return respond(serveIndex());
 

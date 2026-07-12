@@ -134,7 +134,21 @@ test("space import adopts an existing pane and limits distinct live requests to 
   expect(plan.polledPaneCount).toBe(2);
 });
 
+test("space import uses the readable viewport envelope instead of the old tiny fixed group", () => {
+  const plan = createSpaceImportPlan({
+    spaceRef: { displayIndex: 2, spaceIndex: 3 },
+    display,
+    space,
+    windows: [],
+    census: null,
+    groupId: "viewport-group",
+    viewportSize: { w: 1_440, h: 900 },
+  });
+
+  expect(plan.group.w).toBe(1_008);
+  expect(plan.group.h).toBe(720);
+});
+
 test("importSpace is a safe no-op without a browser event target", () => {
   expect(importSpace({ displayIndex: 2, spaceIndex: 3 })).toBe(false);
 });
-

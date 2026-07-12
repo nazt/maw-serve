@@ -16,15 +16,19 @@ import {
   MAX_TERMINAL_ZOOM,
   MIN_TERMINAL_ZOOM,
   TERMINAL_LINE_HEIGHT_RATIO,
+  TERMINAL_TILE_MAX_VIEWPORT_HEIGHT_RATIO,
+  TERMINAL_TILE_MAX_VIEWPORT_WIDTH_RATIO,
   parseTerminalMeta,
   parseTerminalZoom,
   stepTerminalZoom,
   terminalDisplayGrid,
+  terminalTileSize,
   type TerminalCellMetrics,
   type TerminalSourceDimensions,
 } from "./terminalSizing";
 import {
   terminalHealth,
+  type TerminalConnectionState,
   type TerminalConnectionStatus,
 } from "./terminalHealth";
 
@@ -53,6 +57,8 @@ export interface TerminalTileProps {
   theme: Theme;
   pollIntervalMs?: number;
   onTransportModeChange?: (id: string, mode: StreamLeaseMode) => void;
+  onConnectionStateChange?: (id: string, state: TerminalConnectionState | null) => void;
+  onSourceSize?: (id: string, size: { w: number; h: number }) => void;
   streamEligible?: boolean;
   streamLane?: StreamLeaseLane;
   streamPriority?: number;
@@ -60,6 +66,8 @@ export interface TerminalTileProps {
 
 const STREAM_LINES = 120;
 const MAX_STREAM_FAILURES = 3;
+export const STREAM_FIRST_FRAME_TIMEOUT_MS = 5_000;
+const RESIZE_SETTLE_MS = 150;
 const TERMINAL_ZOOM_STORAGE_PREFIX = "stoa.terminal-zoom.v1:";
 
 function terminalZoomStorageKey(itemId: string): string {
@@ -203,6 +211,8 @@ export function TerminalTile({
   theme,
   pollIntervalMs = 2_000,
   onTransportModeChange,
+  onConnectionStateChange,
+  onSourceSize,
   streamEligible = true,
   streamLane = "working",
   streamPriority = STREAM_PRIORITY.normal,
@@ -218,16 +228,32 @@ export function TerminalTile({
   const frameRef = useRef<HTMLDivElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
+  const onSourceSizeRef = useRef(onSourceSize);
+  const onConnectionStateChangeRef = useRef(onConnectionStateChange);
+  const autoSizedSourceRef = useRef("");
   const zoomFactorRef = useRef(zoomFactor);
   const resizeTerminalRef = useRef<() => void>(() => {});
   const resumeFollowRef = useRef<() => void>(() => {});
   const selecting = selectMode || temporarySelect;
   const zoomPercent = Math.round(zoomFactor * 100);
   const health = terminalHealth(status, error);
+  onSourceSizeRef.current = onSourceSize;
+  onConnectionStateChangeRef.current = onConnectionStateChange;
 
   useEffect(() => {
     onTransportModeChange?.(item.id, transportMode);
   }, [item.id, onTransportModeChange, transportMode]);
+
+  useEffect(() => {
+    onConnectionStateChangeRef.current?.(item.id, {
+      status,
+      degraded: health.degraded,
+    });
+  }, [health.degraded, item.id, status]);
+
+  useEffect(() => () => {
+    onConnectionStateChangeRef.current?.(item.id, null);
+  }, [item.id]);
 
   useEffect(() => {
     if (!streamEligible) {
@@ -314,10 +340,15 @@ export function TerminalTile({
     let pollingStarted = false;
     let pollTimer: number | null = null;
     let writeFrame: number | null = null;
+    let resizeFrame: number | null = null;
+    let resizeSettleTimer: number | null = null;
+    let firstFrameTimer: number | null = null;
     let following = true;
     let pausedSnapshot: string | null = null;
     let pendingWrites: Array<{ data: string; reset: boolean }> = [];
     let sourceDimensions: TerminalSourceDimensions | null = null;
+    let settledFrameSize: { width: number; height: number } | null = null;
+    let lastGrid: { cols: number; rows: number; fontSize: number; width: number } | null = null;
 
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
     const terminal = new Terminal({
@@ -408,59 +439,122 @@ export function TerminalTile({
       }
     });
 
-    const resizeTerminal = () => {
+    const setHostStyle = (property: "width" | "height" | "transform" | "transformOrigin", value: string) => {
+      if (host.style[property] !== value) host.style[property] = value;
+    };
+    const setHostData = (key: string, value: string | null) => {
+      if (value === null) {
+        if (key in host.dataset) delete host.dataset[key];
+        return;
+      }
+      if (host.dataset[key] !== value) host.dataset[key] = value;
+    };
+    const ownTile = frame.closest<HTMLElement>(".tile");
+    const groupTile = item.groupId
+      ? Array.from(document.querySelectorAll<HTMLElement>(".tile")).find(
+          (candidate) => candidate.dataset.tileId === item.groupId,
+        ) ?? null
+      : null;
+    const resizeTargets = [ownTile, groupTile].filter(
+      (candidate): candidate is HTMLElement => Boolean(candidate),
+    );
+    const activeResizeGesture = () => resizeTargets.some(
+      (candidate) => candidate.dataset.resizing === "true",
+    );
+    const cancelResizeSchedule = () => {
+      if (resizeSettleTimer !== null) window.clearTimeout(resizeSettleTimer);
+      resizeSettleTimer = null;
+      if (resizeFrame !== null) window.cancelAnimationFrame(resizeFrame);
+      resizeFrame = null;
+    };
+    const notifyReadableSourceSize = (cellMetrics: TerminalCellMetrics) => {
+      if (!sourceDimensions) return;
+      const key = `${sourceDimensions.cols}x${sourceDimensions.rows}`;
+      if (key === autoSizedSourceRef.current) return;
+      autoSizedSourceRef.current = key;
+      const tileWidth = ownTile?.clientWidth ?? item.w;
+      const tileHeight = ownTile?.clientHeight ?? item.h;
+      const chromeWidth = Math.max(0, tileWidth - frame.clientWidth);
+      const chromeHeight = Math.max(0, tileHeight - frame.clientHeight);
+      const renderedWidth = ownTile?.getBoundingClientRect().width ?? tileWidth;
+      const canvasScale = Math.max(0.01, renderedWidth / Math.max(1, tileWidth));
+      const recommended = terminalTileSize(
+        sourceDimensions,
+        cellMetrics,
+        chromeWidth,
+        chromeHeight,
+        window.innerWidth * TERMINAL_TILE_MAX_VIEWPORT_WIDTH_RATIO / canvasScale,
+        window.innerHeight * TERMINAL_TILE_MAX_VIEWPORT_HEIGHT_RATIO / canvasScale,
+      );
+      onSourceSizeRef.current?.(item.id, { w: recommended.w, h: recommended.h });
+    };
+    const performRegrid = () => {
+      resizeFrame = null;
+      if (resizeSettleTimer !== null) window.clearTimeout(resizeSettleTimer);
+      resizeSettleTimer = null;
       if (disposed || frame.clientWidth === 0 || frame.clientHeight === 0) return;
+
+      setHostStyle("transform", "");
+      setHostStyle("transformOrigin", "");
+      setHostStyle("height", "");
+      setHostData("resizePreview", null);
       const shouldFollow = following;
+      let changed = false;
       try {
         if (sourceDimensions) {
           const cellMetrics = renderedCellMetrics(terminal);
           if (!cellMetrics) {
             fitAddon.fit();
-            window.requestAnimationFrame(resizeTerminal);
-            return;
+            changed = true;
+          } else {
+            notifyReadableSourceSize(cellMetrics);
+            const viewport = host.querySelector<HTMLElement>(".xterm-viewport");
+            const scrollbarWidth = viewport
+              ? Math.max(0, host.clientWidth - viewport.clientWidth)
+              : 0;
+            const fitWidth = Math.max(1, frame.clientWidth - scrollbarWidth);
+            const grid = terminalDisplayGrid(
+              fitWidth,
+              frame.clientHeight,
+              sourceDimensions.cols,
+              cellMetrics,
+              zoomFactorRef.current,
+            );
+            const renderedGridWidth = Math.ceil(
+              grid.cols * cellMetrics.width * grid.fontSize / cellMetrics.fontSize + scrollbarWidth,
+            );
+            const hostWidth = Math.max(frame.clientWidth, renderedGridWidth);
+            const widthStyle = `${hostWidth}px`;
+            setHostStyle("width", widthStyle);
+            setHostData("sourceCols", String(sourceDimensions.cols));
+            setHostData("sourceRows", String(sourceDimensions.rows));
+            setHostData("terminalFontSize", String(grid.fontSize));
+            setHostData("terminalZoom", String(zoomFactorRef.current));
+            setHostData("measuredCellWidth", String(cellMetrics.width));
+            setHostData("measuredCellHeight", String(cellMetrics.height));
+            setHostData("displayRows", String(grid.rows));
+
+            const fontChanged = Math.abs((terminal.options.fontSize ?? 0) - grid.fontSize) > 0.05;
+            const gridChanged = terminal.cols !== grid.cols || terminal.rows !== grid.rows;
+            const widthChanged = lastGrid?.width !== hostWidth;
+            if (fontChanged) terminal.options.fontSize = grid.fontSize;
+            if (gridChanged) terminal.resize(grid.cols, grid.rows);
+            changed = fontChanged || gridChanged || widthChanged;
+            lastGrid = { ...grid, width: hostWidth };
           }
-          const viewport = host.querySelector<HTMLElement>(".xterm-viewport");
-          const scrollbarWidth = viewport
-            ? Math.max(0, host.clientWidth - viewport.clientWidth)
-            : 0;
-          const fitWidth = Math.max(1, frame.clientWidth - scrollbarWidth);
-          const grid = terminalDisplayGrid(
-            fitWidth,
-            frame.clientHeight,
-            sourceDimensions.cols,
-            cellMetrics,
-            zoomFactorRef.current,
-          );
-          const expandedWidth = zoomFactorRef.current > 1
-            ? Math.ceil(fitWidth * zoomFactorRef.current + scrollbarWidth)
-            : frame.clientWidth;
-          host.style.width = `${expandedWidth}px`;
-          host.dataset.sourceCols = String(sourceDimensions.cols);
-          host.dataset.sourceRows = String(sourceDimensions.rows);
-          host.dataset.terminalFontSize = String(grid.fontSize);
-          host.dataset.terminalZoom = String(zoomFactorRef.current);
-          host.dataset.measuredCellWidth = String(cellMetrics.width);
-          host.dataset.measuredCellHeight = String(cellMetrics.height);
-          const fontChanged = Math.abs((terminal.options.fontSize ?? 0) - grid.fontSize) > 0.05;
-          if (fontChanged) {
-            terminal.options.fontSize = grid.fontSize;
-          }
-          // FitAddon measures xterm's real rendered cell height, which includes
-          // font metrics beyond the configured lineHeight multiplier. Use that
-          // measured row count when available while keeping source columns fixed.
-          const measuredRows = fitAddon.proposeDimensions()?.rows;
-          const displayRows = measuredRows && measuredRows > 0
-            ? measuredRows
-            : grid.rows;
-          host.dataset.displayRows = String(displayRows);
-          if (terminal.cols !== grid.cols || terminal.rows !== displayRows) {
-            terminal.resize(grid.cols, displayRows);
-          }
-          if (fontChanged) window.requestAnimationFrame(resizeTerminal);
         } else {
-          fitAddon.fit();
+          const proposed = fitAddon.proposeDimensions();
+          if (proposed && (terminal.cols !== proposed.cols || terminal.rows !== proposed.rows)) {
+            terminal.resize(proposed.cols, proposed.rows);
+            changed = true;
+          }
         }
-        if (shouldFollow) {
+        settledFrameSize = { width: frame.clientWidth, height: frame.clientHeight };
+        if (changed) {
+          const count = Number(host.dataset.regridCount ?? 0) + 1;
+          setHostData("regridCount", String(count));
+        }
+        if (changed && shouldFollow) {
           window.requestAnimationFrame(() => {
             if (!disposed) terminal.scrollToBottom();
           });
@@ -469,10 +563,46 @@ export function TerminalTile({
         // A resize can race the tile being removed from the canvas.
       }
     };
-    resizeTerminalRef.current = resizeTerminal;
-    const fitFrame = window.requestAnimationFrame(resizeTerminal);
-    const resizeObserver = new ResizeObserver(resizeTerminal);
+    const scheduleRegrid = (delay = RESIZE_SETTLE_MS) => {
+      if (disposed) return;
+      if (resizeSettleTimer !== null) window.clearTimeout(resizeSettleTimer);
+      resizeSettleTimer = window.setTimeout(() => {
+        resizeSettleTimer = null;
+        if (activeResizeGesture()) return;
+        if (resizeFrame !== null) window.cancelAnimationFrame(resizeFrame);
+        resizeFrame = window.requestAnimationFrame(performRegrid);
+      }, delay);
+    };
+    const previewResize = () => {
+      if (!settledFrameSize || settledFrameSize.width <= 0 || settledFrameSize.height <= 0) {
+        scheduleRegrid(0);
+        return;
+      }
+      const width = frame.clientWidth;
+      const height = frame.clientHeight;
+      if (width === settledFrameSize.width && height === settledFrameSize.height) return;
+      setHostStyle("height", `${settledFrameSize.height}px`);
+      setHostStyle("transformOrigin", "top left");
+      setHostStyle(
+        "transform",
+        `scale(${width / settledFrameSize.width}, ${height / settledFrameSize.height})`,
+      );
+      setHostData("resizePreview", "true");
+    };
+    resizeTerminalRef.current = () => scheduleRegrid(0);
+    const fitFrame = window.requestAnimationFrame(performRegrid);
+    const resizeObserver = new ResizeObserver(() => {
+      previewResize();
+      if (!activeResizeGesture()) scheduleRegrid();
+    });
     resizeObserver.observe(frame);
+    const resizeMutationObserver = new MutationObserver(() => {
+      if (activeResizeGesture()) previewResize();
+      else scheduleRegrid(0);
+    });
+    for (const target of resizeTargets) {
+      resizeMutationObserver.observe(target, { attributes: true, attributeFilter: ["data-resizing"] });
+    }
 
     const onMotionPreference = () => {
       terminal.options.cursorBlink = !reducedMotion.matches;
@@ -508,6 +638,8 @@ export function TerminalTile({
       if (pollingStarted || disposed) return;
       pollingStarted = true;
       pollingDetail = detail;
+      if (firstFrameTimer !== null) window.clearTimeout(firstFrameTimer);
+      firstFrameTimer = null;
       eventSource?.close();
       eventSource = null;
       updateStatus("polling", pollingDetail);
@@ -522,14 +654,25 @@ export function TerminalTile({
       }
 
       eventSource = new EventSource(apiUrlWithParams(API_ENDPOINTS.stream, captureParams()));
+      firstFrameTimer = window.setTimeout(() => {
+        firstFrameTimer = null;
+        if (disposed || pollingStarted || receivedStreamFrame) return;
+        reconnectFailures += 1;
+        startPolling("Live stream unavailable; using snapshots");
+      }, STREAM_FIRST_FRAME_TIMEOUT_MS);
       eventSource.onopen = () => {
         if (receivedStreamFrame) updateStatus("live");
+      };
+      const markStreamFrame = () => {
+        receivedStreamFrame = true;
+        reconnectFailures = 0;
+        if (firstFrameTimer !== null) window.clearTimeout(firstFrameTimer);
+        firstFrameTimer = null;
       };
       const receiveFrame = (event: MessageEvent<string>, reset: boolean) => {
         if (disposed) return;
         queueWrite(event.data, reset);
-        receivedStreamFrame = true;
-        reconnectFailures = 0;
+        markStreamFrame();
         updateStatus("live");
       };
       eventSource.addEventListener("snapshot", (event) => {
@@ -538,13 +681,18 @@ export function TerminalTile({
       eventSource.addEventListener("meta", (event) => {
         const dimensions = parseTerminalMeta((event as MessageEvent<string>).data);
         if (!dimensions) return;
+        markStreamFrame();
         sourceDimensions = dimensions;
-        resizeTerminal();
+        scheduleRegrid(0);
       });
       eventSource.onmessage = (event) => receiveFrame(event, false);
       eventSource.onerror = () => {
         if (disposed || pollingStarted) return;
         reconnectFailures += 1;
+        if (eventSource?.readyState === EventSource.CLOSED) {
+          startPolling("Live stream unavailable; using snapshots");
+          return;
+        }
         updateStatus("reconnecting", "Live stream interrupted; reconnecting");
         if (reconnectFailures >= MAX_STREAM_FAILURES) {
           startPolling("Live stream unavailable; using snapshots");
@@ -559,13 +707,16 @@ export function TerminalTile({
       disposed = true;
       eventSource?.close();
       if (pollTimer !== null) window.clearInterval(pollTimer);
+      if (firstFrameTimer !== null) window.clearTimeout(firstFrameTimer);
       window.cancelAnimationFrame(fitFrame);
       if (writeFrame !== null) window.cancelAnimationFrame(writeFrame);
+      cancelResizeSchedule();
       resizeObserver.disconnect();
+      resizeMutationObserver.disconnect();
       scrollDisposable.dispose();
       reducedMotion.removeEventListener("change", onMotionPreference);
       resumeFollowRef.current = () => {};
-      if (resizeTerminalRef.current === resizeTerminal) resizeTerminalRef.current = () => {};
+      resizeTerminalRef.current = () => {};
       if (terminalRef.current === terminal) terminalRef.current = null;
       terminal.dispose();
     };

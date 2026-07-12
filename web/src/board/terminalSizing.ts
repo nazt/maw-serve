@@ -9,9 +9,12 @@ export interface TerminalCellMetrics {
   fontSize: number;
 }
 
-export const MIN_TERMINAL_FONT_SIZE = 6;
+export const MIN_TERMINAL_FONT_SIZE = 8;
+export const DEFAULT_TERMINAL_FONT_SIZE = 11;
 export const MAX_TERMINAL_FONT_SIZE = 40;
 export const TERMINAL_LINE_HEIGHT_RATIO = 1.3;
+export const TERMINAL_TILE_MAX_VIEWPORT_WIDTH_RATIO = 0.7;
+export const TERMINAL_TILE_MAX_VIEWPORT_HEIGHT_RATIO = 0.8;
 export const MIN_TERMINAL_ZOOM = 0.5;
 export const MAX_TERMINAL_ZOOM = 3;
 export const DEFAULT_TERMINAL_ZOOM = 1;
@@ -21,6 +24,13 @@ export interface TerminalDisplayGrid {
   cols: number;
   rows: number;
   fontSize: number;
+}
+
+export interface TerminalTileSize {
+  w: number;
+  h: number;
+  clampedWidth: boolean;
+  clampedHeight: boolean;
 }
 
 function validDimension(value: unknown): value is number {
@@ -65,12 +75,45 @@ export function terminalFontSize(
   // width ratio. The measured cell already includes the active font stack and
   // device-pixel rounding.
   const fitFont = cellMetrics.fontSize * contentWidth / (cols * cellMetrics.width);
-  const scaled = fitFont * zoomFactor;
+  // The tile follows the pane at a readable default size. A narrow user-sized
+  // tile may reduce the type slightly, but never back to the former 6px cram.
+  // Zoom remains an explicit magnification override and may introduce scroll.
+  const readableBase = Math.max(
+    MIN_TERMINAL_FONT_SIZE,
+    Math.min(DEFAULT_TERMINAL_FONT_SIZE, fitFont),
+  );
+  const scaled = readableBase * zoomFactor;
   const clamped = Math.min(
     MAX_TERMINAL_FONT_SIZE,
     Math.max(MIN_TERMINAL_FONT_SIZE, scaled),
   );
   return Math.round(clamped * 100) / 100;
+}
+
+export function terminalTileSize(
+  source: TerminalSourceDimensions,
+  cellMetrics: TerminalCellMetrics,
+  chromeWidth: number,
+  chromeHeight: number,
+  maxWidth: number,
+  maxHeight: number,
+): TerminalTileSize {
+  if (!validDimension(source.cols) || !validDimension(source.rows) || !validCellMetrics(cellMetrics)) {
+    return { w: 560, h: 340, clampedWidth: false, clampedHeight: false };
+  }
+  const safeChromeWidth = Math.max(0, Number.isFinite(chromeWidth) ? chromeWidth : 0);
+  const safeChromeHeight = Math.max(0, Number.isFinite(chromeHeight) ? chromeHeight : 0);
+  const cellScale = DEFAULT_TERMINAL_FONT_SIZE / cellMetrics.fontSize;
+  const desiredWidth = Math.ceil(source.cols * cellMetrics.width * cellScale + safeChromeWidth);
+  const desiredHeight = Math.ceil(source.rows * cellMetrics.height * cellScale + safeChromeHeight);
+  const widthLimit = Math.max(1, Number.isFinite(maxWidth) ? maxWidth : desiredWidth);
+  const heightLimit = Math.max(1, Number.isFinite(maxHeight) ? maxHeight : desiredHeight);
+  return {
+    w: Math.max(1, Math.round(Math.min(desiredWidth, widthLimit))),
+    h: Math.max(1, Math.round(Math.min(desiredHeight, heightLimit))),
+    clampedWidth: desiredWidth > widthLimit,
+    clampedHeight: desiredHeight > heightLimit,
+  };
 }
 
 export function terminalRows(

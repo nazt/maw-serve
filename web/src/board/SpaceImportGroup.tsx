@@ -1,11 +1,11 @@
 import type { SpaceImportBoardItem } from "./boardItems";
+import type { TerminalConnectionSummary } from "./terminalHealth";
 
 const GROUP_HEADER_HEIGHT = 40;
 
 interface SpaceImportGroupProps {
   item: SpaceImportBoardItem;
-  liveCount: number;
-  pollCount: number;
+  connections: TerminalConnectionSummary;
   onToggle: (id: string) => void;
   onRemove: (id: string) => void;
 }
@@ -44,8 +44,7 @@ function SpaceMiniMap({ item }: { item: SpaceImportBoardItem }) {
 
 export default function SpaceImportGroup({
   item,
-  liveCount,
-  pollCount,
+  connections,
   onToggle,
   onRemove,
 }: SpaceImportGroupProps) {
@@ -77,11 +76,16 @@ export default function SpaceImportGroup({
         </strong>
         <span
           className="shrink-0 rounded border border-[oklch(var(--line-channels)/0.72)] bg-[oklch(var(--surface-channels)/0.66)] px-1.5 py-0.5 text-[10px] tabular-nums text-[var(--ink-dim)]"
-          aria-label={`${liveCount} live terminals, ${pollCount} polled terminals`}
-          data-live-count={liveCount}
-          data-polled-count={pollCount}
+          aria-label={`${connections.live} live terminals, ${connections.polling} polled terminals, ${connections.degraded} degraded terminals`}
+          data-live-count={connections.live}
+          data-polled-count={connections.polling}
+          data-degraded-count={connections.degraded}
         >
-          {liveCount} live / {pollCount} polled
+          {connections.live} live / {connections.polling} polled
+          {connections.degraded > 0 ? ` / ${connections.degraded} degraded` : null}
+          {connections.degraded === 0 && connections.connecting > 0
+            ? ` / ${connections.connecting} starting`
+            : null}
         </span>
         <button
           type="button"

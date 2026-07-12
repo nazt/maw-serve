@@ -78,7 +78,11 @@ import {
 import TerminalTile, {
   type TerminalTileItem,
 } from "./board/TerminalTile";
-import { STREAM_PRIORITY, type StreamLeaseMode } from "./board/streamLease";
+import {
+  summarizeTerminalConnections,
+  type TerminalConnectionState,
+} from "./board/terminalHealth";
+import { STREAM_PRIORITY } from "./board/streamLease";
 import OracleTileContent, {
   oracleHasConnectAffordance,
 } from "./fleet/OracleTileContent";
@@ -932,7 +936,9 @@ function BoardPageView({
   const [terminalTiles, setTerminalTiles] = useState<TerminalTileItem[]>(() => (
     restoredItems.filter((item): item is TerminalTileItem => item.kind === "terminal")
   ));
-  const [terminalModes, setTerminalModes] = useState<Record<string, StreamLeaseMode>>({});
+  const [terminalConnections, setTerminalConnections] = useState<
+    Record<string, TerminalConnectionState>
+  >({});
   const spaceGroupsRef = useRef<SpaceImportBoardItem[]>([]);
   const terminalTilesRef = useRef(terminalTiles);
   terminalTilesRef.current = terminalTiles;
@@ -1470,6 +1476,10 @@ function BoardPageView({
     }
 
     const ungroupedTerminals = terminalTilesRef.current.filter((item) => !item.groupId);
+    const viewportSize = {
+      w: window.innerWidth / Math.max(0.01, canvas.zoom),
+      h: window.innerHeight / Math.max(0.01, canvas.zoom),
+    };
     const draft = createSpaceImportPlan({
       spaceRef,
       display,
@@ -1478,6 +1488,7 @@ function BoardPageView({
       census,
       modelByOracle,
       existingTerminals: ungroupedTerminals,
+      viewportSize,
     });
     const landing = landItem(draft.group, {
       items: allTiles,
@@ -1492,6 +1503,7 @@ function BoardPageView({
       census,
       modelByOracle,
       existingTerminals: ungroupedTerminals,
+      viewportSize,
       groupId: draft.group.groupId,
       groupGeometry: landing.item,
     });
@@ -1519,6 +1531,7 @@ function BoardPageView({
   }, [
     activateTile,
     allTiles,
+    canvas.zoom,
     census,
     focusLandedItem,
     landingIdentity,
@@ -1805,6 +1818,31 @@ function BoardPageView({
         ? { ...next, zIndex: Math.max(tileZIndex(item), tileZIndex(next)) }
         : item
     )));
+  }, []);
+
+  const autoSizeTerminal = useCallback((id: string, size: { w: number; h: number }) => {
+    const current = terminalTilesRef.current.find((item) => item.id === id);
+    if (!current || (
+      Math.abs(current.w - size.w) < 1 && Math.abs(current.h - size.h) < 1
+    )) return;
+    updateAppTile({ ...current, w: size.w, h: size.h });
+  }, [updateAppTile]);
+
+  const updateTerminalConnection = useCallback((
+    id: string,
+    state: TerminalConnectionState | null,
+  ) => {
+    setTerminalConnections((current) => {
+      if (!state) {
+        if (!(id in current)) return current;
+        const next = { ...current };
+        delete next[id];
+        return next;
+      }
+      const existing = current[id];
+      if (existing?.status === state.status && existing.degraded === state.degraded) return current;
+      return { ...current, [id]: state };
+    });
   }, []);
 
   const updateNote = useCallback((id: string, text: string) => {
@@ -2170,6 +2208,11 @@ function BoardPageView({
           const actionTabIndex = item.kind === "oracle"
             ? rovingActionTabIndex(item.id, selectedOracleId)
             : undefined;
+          const groupConnections = item.kind === "space-import"
+            ? summarizeTerminalConnections(terminalTiles
+                .filter((terminal) => terminal.groupId === item.groupId)
+                .map((terminal) => terminalConnections[terminal.id]))
+            : null;
           return (
             <Tile
               key={`${layoutEpoch}:${item.id}`}
@@ -2196,6 +2239,7 @@ function BoardPageView({
                 : item.kind === "space-import" && !item.collapsed
                   ? item.expandedSize.w / item.expandedSize.h
                   : null}
+              aspectRatioLock={item.kind === "space-import" ? "shift" : "default"}
               tabIndex={tileTabIndex}
               resizeTabIndex={actionTabIndex}
               ariaLabel={item.kind === "oracle"
@@ -2301,9 +2345,8 @@ function BoardPageView({
                 <TerminalTile
                   item={item}
                   onClose={item.groupId ? undefined : closeTerminal}
-                  onTransportModeChange={(id, mode) => setTerminalModes((current) => (
-                    current[id] === mode ? current : { ...current, [id]: mode }
-                  ))}
+                  onConnectionStateChange={updateTerminalConnection}
+                  onSourceSize={autoSizeTerminal}
                   streamEligible={item.streamEligible}
                   theme={theme}
                   streamPriority={item.id === landedItemId
@@ -2313,14 +2356,7 @@ function BoardPageView({
               ) : item.kind === "space-import" ? (
                 <SpaceImportGroup
                   item={item}
-                  liveCount={item.collapsed ? 0 : terminalTiles.filter((terminal) => (
-                    terminal.groupId === item.groupId && terminalModes[terminal.id] === "stream"
-                  )).length}
-                  pollCount={terminalTiles.filter((terminal) => (
-                    terminal.groupId === item.groupId && (
-                      item.collapsed || terminalModes[terminal.id] !== "stream"
-                    )
-                  )).length}
+                  connections={groupConnections!}
                   onToggle={toggleSpaceImport}
                   onRemove={removeSpaceGroup}
                 />

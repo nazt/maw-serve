@@ -300,6 +300,20 @@ export default function SpacePageView({
     }));
   }, [geometryIdFor]);
 
+  const autoSizeTerminal = useCallback((id: string, size: { w: number; h: number }) => {
+    const item = items.find((candidate) => candidate.id === id);
+    if (!item) return;
+    const geometryId = geometryIdFor(item);
+    setGeometry((current) => ({
+      ...current,
+      [geometryId]: {
+        ...(current[geometryId] ?? item),
+        w: size.w,
+        h: size.h,
+      },
+    }));
+  }, [geometryIdFor, items]);
+
   const raise = useCallback((item: SpaceWindowItem) => {
     const id = geometryIdFor(item);
     const zIndex = ++topZRef.current;
@@ -464,6 +478,7 @@ export default function SpacePageView({
                 <TerminalTile
                   item={item}
                   theme={theme}
+                  onSourceSize={autoSizeTerminal}
                   streamEligible={item.streamEligible}
                   streamPriority={item.streamPriority}
                 />

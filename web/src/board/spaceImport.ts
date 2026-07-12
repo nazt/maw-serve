@@ -21,6 +21,10 @@ import {
   WORKING_STREAM_BUDGET,
 } from "./streamLease";
 import type { TerminalTileItem } from "./TerminalTile";
+import {
+  TERMINAL_TILE_MAX_VIEWPORT_HEIGHT_RATIO,
+  TERMINAL_TILE_MAX_VIEWPORT_WIDTH_RATIO,
+} from "./terminalSizing";
 
 export const SPACE_IMPORT_EVENT = "stoa:import-space";
 export const SPACE_IMPORT_STREAM_CAP = 8;
@@ -42,6 +46,7 @@ export interface SpaceImportPlanOptions {
   existingTerminals?: readonly TerminalTileItem[];
   groupGeometry?: BoardItemGeometry;
   groupId?: string;
+  viewportSize?: { w: number; h: number };
 }
 
 export interface SpaceImportPlan {
@@ -87,14 +92,24 @@ export function fitIntoBoundingBox(
   }));
 }
 
-function defaultGroupGeometry(display: MirrorDisplay): BoardItemGeometry {
-  const w = 760;
+function defaultGroupGeometry(
+  display: MirrorDisplay,
+  viewportSize?: { w: number; h: number },
+): BoardItemGeometry {
+  const viewportWidth = Number(viewportSize?.w);
+  const viewportHeight = Number(viewportSize?.h);
+  const w = Number.isFinite(viewportWidth) && viewportWidth > 0
+    ? Math.max(320, Math.round(viewportWidth * TERMINAL_TILE_MAX_VIEWPORT_WIDTH_RATIO))
+    : 760;
   const contentHeight = w * display.frame.h / display.frame.w;
+  const maxHeight = Number.isFinite(viewportHeight) && viewportHeight > 0
+    ? Math.max(240, Math.round(viewportHeight * TERMINAL_TILE_MAX_VIEWPORT_HEIGHT_RATIO))
+    : 560;
   return {
     x: 0,
     y: 0,
     w,
-    h: Math.round(Math.min(560, Math.max(320, contentHeight + SPACE_GROUP_HEADER_HEIGHT))),
+    h: Math.round(Math.min(maxHeight, Math.max(320, contentHeight + SPACE_GROUP_HEADER_HEIGHT))),
   };
 }
 
@@ -111,7 +126,9 @@ function terminalPriority(window: MirrorWindow, status: string | null | undefine
 /** Builds one atomic, descriptor-only import plan. It never fetches terminal content. */
 export function createSpaceImportPlan(options: SpaceImportPlanOptions): SpaceImportPlan {
   const groupId = options.groupId ?? `space-group-${Date.now().toString(36)}-${(++importSequence).toString(36)}`;
-  const groupGeometry = finiteRect(options.groupGeometry ?? defaultGroupGeometry(options.display));
+  const groupGeometry = finiteRect(
+    options.groupGeometry ?? defaultGroupGeometry(options.display, options.viewportSize),
+  );
   const rawPositions = computeSpaceLayout(options.display, options.space, options.windows);
   const positions = fitIntoBoundingBox(
     rawPositions,
@@ -265,4 +282,3 @@ export function importSpace(spaceRef: SpaceReference): boolean {
   window.dispatchEvent(event);
   return event.defaultPrevented;
 }
-

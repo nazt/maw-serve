@@ -25,6 +25,7 @@ export interface TileProps<Item extends TileItem = TileItem> {
   onKeyDown?: KeyboardEventHandler<HTMLElement>;
   onActivate?: (item: Item) => void;
   aspectRatio?: number | null;
+  aspectRatioLock?: "default" | "shift";
   onChange?: (item: Item, kind: TileChangeKind) => void;
   onCommit?: (item: Item, kind: TileChangeKind) => void;
 }
@@ -84,6 +85,7 @@ export function Tile<Item extends TileItem>({
   onKeyDown,
   onActivate,
   aspectRatio,
+  aspectRatioLock,
   onChange,
   onCommit,
 }: TileProps<Item>) {
@@ -101,6 +103,7 @@ export function Tile<Item extends TileItem>({
     minWidth,
     minHeight,
     aspectRatio,
+    aspectRatioLock,
     onChange,
     onCommit,
   });

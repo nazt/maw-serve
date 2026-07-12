@@ -1,6 +1,6 @@
 {
-  "branch": "agents/stoa-palette-ui",
-  "commit": "65e2452",
-  "builder": "stoa-shell",
-  "buildTime": "2026-07-12T11:50:32.994Z"
+  "branch": "agents/stoa-tile-fixes",
+  "commit": "9107c2f",
+  "builder": "stoa-server",
+  "buildTime": "2026-07-12T15:17:03.154Z"
 }
