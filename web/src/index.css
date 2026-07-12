@@ -944,6 +944,32 @@
 }
 
 /* Command surface: quiet observatory chrome, content stays terminal-forward. */
+.page-tabs__list {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  mask-repeat: no-repeat;
+  mask-size: 100% 100%;
+}
+
+.page-tabs__list::-webkit-scrollbar {
+  display: none;
+}
+
+.page-tabs__list[data-edge-fade="end"] {
+  -webkit-mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 1rem), transparent 100%);
+  mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 1rem), transparent 100%);
+}
+
+.page-tabs__list[data-edge-fade="start"] {
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 1rem, #000 100%);
+  mask-image: linear-gradient(to right, transparent 0, #000 1rem, #000 100%);
+}
+
+.page-tabs__list[data-edge-fade="both"] {
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 1rem, #000 calc(100% - 1rem), transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, #000 1rem, #000 calc(100% - 1rem), transparent 100%);
+}
+
 [data-page-id]:has(> .palette-launcher) > header:has(> nav[aria-label="Board pages"]) {
   width: calc(100vw - 1.5rem);
   padding-inline-end: calc(var(--palette-launcher-width) + var(--palette-launcher-gap));
