@@ -32,11 +32,19 @@ import {
   type NoteBoardItem,
   type SpaceImportBoardItem,
 } from "./board/boardItems";
+import CommandPalette from "./board/CommandPalette";
+import { landItem } from "./board/landing";
+import {
+  buildPaletteIndex,
+  type OraclePaletteItem,
+  type SpacePaletteItem,
+} from "./board/paletteIndex";
 import SpaceImportGroup from "./board/SpaceImportGroup";
 import {
   SPACE_GROUP_HEADER_HEIGHT,
   SPACE_IMPORT_EVENT,
   createSpaceImportPlan,
+  importSpace,
   type SpaceImportRequestDetail,
 } from "./board/spaceImport";
 import {
@@ -65,7 +73,7 @@ import {
 import TerminalTile, {
   type TerminalTileItem,
 } from "./board/TerminalTile";
-import type { StreamLeaseMode } from "./board/streamLease";
+import { STREAM_PRIORITY, type StreamLeaseMode } from "./board/streamLease";
 import OracleTileContent from "./fleet/OracleTileContent";
 import StatusBar, { summarizeFleet } from "./fleet/StatusBar";
 import type { Theme } from "./theme";
@@ -88,15 +96,13 @@ import {
   spacePageId,
 } from "./mirror/model";
 import { useMirrorOracleModels, useMirrorReport, useOraclePulse } from "./mirror/useMirror";
-import type { MirrorReport } from "./mirror/types";
+import { newestPulseForOracle } from "./mirror/useMirror";
+import type { MirrorReport, OraclePulseMap } from "./mirror/types";
 
 type AppTileItem = FleetTileItem | TerminalTileItem;
 type UserBoardItem = BoardItem | TerminalTileItem;
+type UndoLanding = { ids: string[]; restoreTerminals?: TerminalTileItem[] };
 type HintState = "visible" | "leaving";
-type SpaceImportUndo = {
-  groupId: string;
-  adopted: TerminalTileItem[];
-};
 type OraclePress = {
   oracle: OracleTileItem;
   pointerId: number;
@@ -245,40 +251,18 @@ function NoteTileContent({ item, onChange }: NoteTileContentProps) {
 }
 
 interface BoardItemContentProps {
-  item: BoardItem;
+  item: Exclude<BoardItem, SpaceImportBoardItem>;
   onNoteChange: (id: string, text: string) => void;
   onClose: (id: string) => void;
 }
 
-function BoardItemContent({ item, onNoteChange, onClose }: BoardItemContentProps) {
+function BoardItemContent({
+  item,
+  onNoteChange,
+  onClose,
+}: BoardItemContentProps) {
   if (item.kind === "note") {
     return <NoteTileContent item={item} onChange={onNoteChange} />;
-  }
-
-  if (item.kind === "space-import") {
-    return (
-      <section className="flex h-full flex-col overflow-hidden rounded-md border border-[var(--line)] bg-[var(--surface)] font-mono">
-        <header className="flex h-9 items-center gap-2 border-b border-[var(--line)] px-2.5 text-xs">
-          <strong className="min-w-0 flex-1 truncate">
-            space {item.spaceRef.spaceIndex}
-          </strong>
-          <span className="text-[10px] text-[var(--ink-dim)]">
-            {item.members.length} windows
-          </span>
-          <button
-            type="button"
-            className="grid h-6 w-6 place-items-center rounded text-[var(--ink-dim)] hover:bg-[var(--surface-2)] hover:text-[var(--ink)]"
-            aria-label={`Remove imported space ${item.spaceRef.spaceIndex}`}
-            onClick={() => onClose(item.id)}
-          >
-            ×
-          </button>
-        </header>
-        <div className="grid min-h-0 flex-1 place-items-center text-[10px] text-[var(--ink-faint)]">
-          space import descriptor
-        </div>
-      </section>
-    );
   }
 
   return (
@@ -588,12 +572,12 @@ function tileClassName(item: AppTileItem): string {
     return "rounded-md bg-[var(--surface)]";
   }
 
-  if (item.kind === "terminal") {
-    return "rounded-md bg-[var(--terminal-surface)]";
-  }
-
   if (item.kind === "space-import") {
     return "rounded-md bg-[var(--surface)]";
+  }
+
+  if (item.kind === "terminal") {
+    return "rounded-md bg-[var(--terminal-surface)]";
   }
 
   return [
@@ -607,19 +591,6 @@ function tileClassName(item: AppTileItem): string {
 function finiteIdle(value: number | null | undefined): number {
   const idle = Number(value);
   return Number.isFinite(idle) && idle >= 0 ? idle : Number.POSITIVE_INFINITY;
-}
-
-function overlaps(
-  left: Pick<PersistedGeometry, "x" | "y" | "w" | "h">,
-  right: Pick<PersistedGeometry, "x" | "y" | "w" | "h">,
-  gap = 18,
-): boolean {
-  return !(
-    left.x + left.w + gap <= right.x ||
-    right.x + right.w + gap <= left.x ||
-    left.y + left.h + gap <= right.y ||
-    right.y + right.h + gap <= left.y
-  );
 }
 
 function idleDetail(value: number | null): string {
@@ -682,6 +653,7 @@ interface BoardPageViewProps {
   oracleDisplayPages: ReadonlyMap<string, string>;
   mirrorReport: MirrorReport | null;
   modelByOracle: ReadonlyMap<string, string>;
+  pulses: OraclePulseMap;
   theme: Theme;
   onToggleTheme: () => void;
 }
@@ -696,6 +668,7 @@ function BoardPageView({
   oracleDisplayPages,
   mirrorReport,
   modelByOracle,
+  pulses,
   theme,
   onToggleTheme,
 }: BoardPageViewProps) {
@@ -718,6 +691,9 @@ function BoardPageView({
   const [layoutEpoch, setLayoutEpoch] = useState(0);
   const [persistenceWarning, setPersistenceWarning] = useState<string | null>(null);
   const [selectedOracleId, setSelectedOracleId] = useState<string | null>(null);
+  const [landedItemId, setLandedItemId] = useState<string | null>(null);
+  const undoLandingRef = useRef<UndoLanding | null>(null);
+  const landedTimerRef = useRef<number | null>(null);
   const oracleClickTimerRef = useRef<number | null>(null);
   const pendingOracleIdRef = useRef<string | null>(null);
   const oraclePressRef = useRef<OraclePress | null>(null);
@@ -737,7 +713,6 @@ function BoardPageView({
     restoredItems.filter((item): item is TerminalTileItem => item.kind === "terminal")
   ));
   const [terminalModes, setTerminalModes] = useState<Record<string, StreamLeaseMode>>({});
-  const spaceImportUndoRef = useRef<SpaceImportUndo | null>(null);
   const spaceGroupsRef = useRef<SpaceImportBoardItem[]>([]);
   const terminalTilesRef = useRef(terminalTiles);
   terminalTilesRef.current = terminalTiles;
@@ -787,6 +762,24 @@ function BoardPageView({
     () => [...statusTiles, ...visibleTerminalTiles],
     [statusTiles, visibleTerminalTiles],
   );
+  const paletteItems = useMemo(() => buildPaletteIndex(
+    positionedFleetTiles.flatMap((oracle): OraclePaletteItem[] => {
+      const target = terminalPane(census, oracle);
+      if (!target) return [];
+      return [{
+        id: `oracle:${oracle.id}`,
+        kind: "oracle",
+        name: oracle.data.oracle,
+        path: `${oracle.data.display} / ${oracle.data.space}`,
+        searchText: `${oracle.data.oracle} ${oracle.data.display} ${oracle.data.space} ${oracle.data.modelTier}`,
+        oracle,
+        session: target.session,
+        window: target.window,
+        pulseAt: newestPulseForOracle(pulses, oracle.data.oracle)?.at ?? 0,
+      }];
+    }),
+    mirrorReport,
+  ), [census, mirrorReport, positionedFleetTiles, pulses]);
   const totals = useMemo(() => summarizeFleet(statusTiles, usage), [statusTiles, usage]);
   const hasOracleTiles = positionedFleetTiles.length > 0;
   const persistedState: PersistedBoardState = useMemo(() => ({
@@ -825,6 +818,19 @@ function BoardPageView({
   }, []);
 
   useEffect(() => cancelOracleClick, [cancelOracleClick]);
+
+  useEffect(() => () => {
+    if (landedTimerRef.current !== null) window.clearTimeout(landedTimerRef.current);
+  }, []);
+
+  const flashLanding = useCallback((id: string) => {
+    if (landedTimerRef.current !== null) window.clearTimeout(landedTimerRef.current);
+    setLandedItemId(id);
+    landedTimerRef.current = window.setTimeout(() => {
+      setLandedItemId(null);
+      landedTimerRef.current = null;
+    }, 900);
+  }, []);
 
   useEffect(() => {
     if (initialFitComplete.current || !hasOracleTiles) return;
@@ -876,125 +882,17 @@ function BoardPageView({
     return topZRef.current;
   }, []);
 
-  const groupLanding = useCallback((w: number, h: number) => {
-    const center = viewportCenter();
-    const occupied = allTiles;
-    for (let step = 0; step < 18; step += 1) {
-      const ring = Math.floor((step + 3) / 4);
-      const direction = step % 4;
-      const dx = direction === 0 ? ring : direction === 2 ? -ring : 0;
-      const dy = direction === 1 ? ring : direction === 3 ? -ring : 0;
-      const candidate = {
-        x: Math.round(center.x - w / 2 + dx * 48),
-        y: Math.round(center.y - h / 2 + dy * 48),
-        w,
-        h,
-      };
-      if (!occupied.some((item) => overlaps(candidate, item))) return candidate;
-    }
-    const cascade = spaceGroupsRef.current.length * 32;
-    return {
-      x: Math.round(center.x - w / 2 + cascade),
-      y: Math.round(center.y - h / 2 + cascade),
-      w,
-      h,
-    };
-  }, [allTiles, viewportCenter]);
-
-  const performSpaceImport = useCallback((
-    spaceRef: SpaceImportRequestDetail["spaceRef"],
-  ): boolean => {
-    const existingGroup = spaceGroupsRef.current.find((item) => (
-      item.spaceRef.displayIndex === spaceRef.displayIndex &&
-      item.spaceRef.spaceIndex === spaceRef.spaceIndex
-    ));
-    if (existingGroup) {
-      canvas.focusOn(existingGroup);
-      return true;
-    }
-
-    const display = mirrorReport?.displays.find(
-      (candidate) => candidate.index === spaceRef.displayIndex,
-    );
-    const space = mirrorReport?.spaces.find((candidate) => (
-      candidate.display === spaceRef.displayIndex && candidate.index === spaceRef.spaceIndex
-    ));
-    if (!display || !space || !mirrorReport) {
-      setPersistenceWarning(`Space ${spaceRef.spaceIndex} is unavailable`);
-      return false;
-    }
-
-    const ungroupedTerminals = terminalTilesRef.current.filter((item) => !item.groupId);
-    const draft = createSpaceImportPlan({
-      spaceRef,
-      display,
-      space,
-      windows: mirrorReport.windows,
-      census,
-      modelByOracle,
-      existingTerminals: ungroupedTerminals,
-    });
-    const landing = groupLanding(draft.group.w, draft.group.h);
-    const plan = createSpaceImportPlan({
-      spaceRef,
-      display,
-      space,
-      windows: mirrorReport.windows,
-      census,
-      modelByOracle,
-      existingTerminals: ungroupedTerminals,
-      groupId: draft.group.groupId,
-      groupGeometry: landing,
-    });
-    const terminalCount = plan.livePaneCount + plan.polledPaneCount;
-    if (terminalCount > 0 && !window.confirm(
-      `${plan.livePaneCount} live / ${plan.polledPaneCount} poll — pull space ${spaceRef.spaceIndex}?`,
-    )) {
-      return false;
-    }
-
-    const adopted = terminalTilesRef.current.filter((item) => (
-      plan.adoptedTerminalIds.includes(item.id)
-    ));
-    const group = { ...plan.group, zIndex: nextUserZ() };
-    const terminals = plan.terminals.map((item) => ({
-      ...item,
-      zIndex: nextUserZ(),
-    }));
-    const byId = new Map(terminals.map((item) => [item.id, item]));
-    setBoardItems((current) => [...current, group]);
-    setTerminalTiles((current) => [
-      ...current.map((item) => byId.get(item.id) ?? item),
-      ...terminals.filter((item) => !current.some((candidate) => candidate.id === item.id)),
-    ]);
-    spaceImportUndoRef.current = { groupId: group.groupId, adopted };
-    setPersistenceWarning(null);
-    window.requestAnimationFrame(() => canvas.focusOn(group));
-    return true;
-  }, [canvas, census, groupLanding, mirrorReport, modelByOracle, nextUserZ]);
-
-  useEffect(() => {
-    const onImport = (event: Event) => {
-      const request = event as CustomEvent<SpaceImportRequestDetail>;
-      if (!request.detail?.spaceRef) return;
-      if (performSpaceImport(request.detail.spaceRef)) request.preventDefault();
-    };
-    window.addEventListener(SPACE_IMPORT_EVENT, onImport);
-    return () => window.removeEventListener(SPACE_IMPORT_EVENT, onImport);
-  }, [performSpaceImport]);
-
   const raiseUserItem = useCallback((id: string) => {
     const zIndex = nextUserZ();
     const group = spaceGroupsRef.current.find((item) => item.id === id);
     setBoardItems((current) => current.map((item) => (
       item.id === id ? { ...item, zIndex } : item
     )));
-    setTerminalTiles((current) => current.map((item) => {
-      if (group && item.groupId === group.groupId) {
-        return { ...item, zIndex: nextUserZ() };
-      }
-      return item.id === id ? { ...item, zIndex } : item;
-    }));
+    setTerminalTiles((current) => current.map((item) => (
+      group && item.groupId === group.groupId
+        ? { ...item, zIndex: nextUserZ() }
+        : item.id === id ? { ...item, zIndex } : item
+    )));
   }, [nextUserZ]);
 
   const raiseOracle = useCallback((oracle: OracleTileItem) => {
@@ -1142,6 +1040,170 @@ function BoardPageView({
     });
   }, [census, nextUserZ]);
 
+  const landingIdentity = useCallback((candidate: { id: string }) => {
+    const item = candidate as AppTileItem;
+    if (item.kind === "terminal") {
+      return `terminal:${item.data.session}:${item.data.window}`;
+    }
+    if (item.kind === "space-import") {
+      return `space:${item.spaceRef.displayIndex}:${item.spaceRef.spaceIndex}`;
+    }
+    return null;
+  }, []);
+
+  const focusLandedItem = useCallback((item: { id: string; x: number; y: number; w: number; h: number }) => {
+    flashLanding(item.id);
+    window.requestAnimationFrame(() => canvas.focusOn(item, { zoom: Math.min(1, canvas.zoom) }));
+  }, [canvas, flashLanding]);
+
+  const pinPaletteOracle = useCallback((paletteItem: OraclePaletteItem) => {
+    const grouped = boardItems.find((item): item is SpaceImportBoardItem => (
+      item.kind === "space-import" && item.members.some((member) => (
+        member.target?.session === paletteItem.session &&
+        member.target.window === paletteItem.window
+      ))
+    ));
+    if (grouped) {
+      activateTile(grouped);
+      focusLandedItem(grouped);
+      return;
+    }
+    const terminal: TerminalTileItem = {
+      id: `terminal:${paletteItem.session}:${paletteItem.window}`,
+      kind: "terminal",
+      x: 0,
+      y: 0,
+      w: 560,
+      h: 340,
+      zIndex: nextUserZ(),
+      data: {
+        oracle: paletteItem.name,
+        session: paletteItem.session,
+        window: paletteItem.window,
+        model: paletteItem.oracle.data.modelTier,
+      },
+    };
+    const result = landItem(terminal, {
+      items: allTiles,
+      viewportCenter: viewportCenter(),
+      targetKey: landingIdentity,
+    });
+    if (result.action === "existing") {
+      const existing = result.item as AppTileItem;
+      activateTile(existing);
+      focusLandedItem(existing);
+      return;
+    }
+    setTerminalTiles((current) => [...current, result.item]);
+    undoLandingRef.current = { ids: [result.item.id] };
+    focusLandedItem(result.item);
+  }, [activateTile, allTiles, boardItems, focusLandedItem, landingIdentity, nextUserZ, viewportCenter]);
+
+  const performSpaceImport = useCallback((
+    spaceRef: SpaceImportRequestDetail["spaceRef"],
+  ): boolean => {
+    const existing = spaceGroupsRef.current.find((item) => (
+      item.spaceRef.displayIndex === spaceRef.displayIndex &&
+      item.spaceRef.spaceIndex === spaceRef.spaceIndex
+    ));
+    if (existing) {
+      activateTile(existing);
+      focusLandedItem(existing);
+      return true;
+    }
+
+    const display = mirrorReport?.displays.find(
+      (candidate) => candidate.index === spaceRef.displayIndex,
+    );
+    const space = mirrorReport?.spaces.find((candidate) => (
+      candidate.display === spaceRef.displayIndex && candidate.index === spaceRef.spaceIndex
+    ));
+    if (!display || !space || !mirrorReport) {
+      setPersistenceWarning(`Space ${spaceRef.spaceIndex} is unavailable`);
+      return false;
+    }
+
+    const ungroupedTerminals = terminalTilesRef.current.filter((item) => !item.groupId);
+    const draft = createSpaceImportPlan({
+      spaceRef,
+      display,
+      space,
+      windows: mirrorReport.windows,
+      census,
+      modelByOracle,
+      existingTerminals: ungroupedTerminals,
+    });
+    const landing = landItem(draft.group, {
+      items: allTiles,
+      viewportCenter: viewportCenter(),
+      targetKey: landingIdentity,
+    });
+    const plan = createSpaceImportPlan({
+      spaceRef,
+      display,
+      space,
+      windows: mirrorReport.windows,
+      census,
+      modelByOracle,
+      existingTerminals: ungroupedTerminals,
+      groupId: draft.group.groupId,
+      groupGeometry: landing.item,
+    });
+    const terminalCount = plan.livePaneCount + plan.polledPaneCount;
+    if (terminalCount > 0 && !window.confirm(
+      `${plan.livePaneCount} live / ${plan.polledPaneCount} poll — pull space ${spaceRef.spaceIndex}?`,
+    )) return false;
+
+    const adopted = terminalTilesRef.current.filter((item) => (
+      plan.adoptedTerminalIds.includes(item.id)
+    ));
+    const group = { ...plan.group, zIndex: nextUserZ() };
+    const terminals = plan.terminals.map((item) => ({
+      ...item,
+      zIndex: nextUserZ(),
+    }));
+    const byId = new Map(terminals.map((item) => [item.id, item]));
+    setBoardItems((current) => [...current, group]);
+    setTerminalTiles((current) => [
+      ...current.map((item) => byId.get(item.id) ?? item),
+      ...terminals.filter((item) => !current.some((candidate) => candidate.id === item.id)),
+    ]);
+    undoLandingRef.current = {
+      ids: [group.id, ...terminals.map((item) => item.id)],
+      restoreTerminals: adopted,
+    };
+    setPersistenceWarning(null);
+    focusLandedItem(group);
+    return true;
+  }, [
+    activateTile,
+    allTiles,
+    census,
+    focusLandedItem,
+    landingIdentity,
+    mirrorReport,
+    modelByOracle,
+    nextUserZ,
+    viewportCenter,
+  ]);
+
+  useEffect(() => {
+    const onImport = (event: Event) => {
+      const request = event as CustomEvent<SpaceImportRequestDetail>;
+      if (!request.detail?.spaceRef) return;
+      if (performSpaceImport(request.detail.spaceRef)) request.preventDefault();
+    };
+    window.addEventListener(SPACE_IMPORT_EVENT, onImport);
+    return () => window.removeEventListener(SPACE_IMPORT_EVENT, onImport);
+  }, [performSpaceImport]);
+
+  const importPaletteSpace = useCallback((paletteItem: SpacePaletteItem) => {
+    importSpace({
+      displayIndex: paletteItem.display.index,
+      spaceIndex: paletteItem.space.index,
+    });
+  }, []);
+
   const focusOracle = useCallback((oracle: OracleTileItem) => {
     raiseOracle(oracle);
     setSelectedOracleId(oracle.id);
@@ -1232,6 +1294,34 @@ function BoardPageView({
     jumpToActive,
     jumpToAttention,
   ]);
+
+  useEffect(() => {
+    const undoLanding = (event: KeyboardEvent) => {
+      if (
+        event.key.toLowerCase() !== "z" ||
+        (!event.metaKey && !event.ctrlKey) ||
+        event.altKey ||
+        event.shiftKey ||
+        isEditableTarget(event.target)
+      ) return;
+      const undo = undoLandingRef.current;
+      if (!undo) return;
+      event.preventDefault();
+      const ids = new Set(undo.ids);
+      setBoardItems((current) => current.filter((item) => !ids.has(item.id)));
+      setTerminalTiles((current) => [
+        ...current.filter((item) => !ids.has(item.id)),
+        ...(undo.restoreTerminals ?? []).filter((restore) => (
+          !current.some((item) => item.id === restore.id)
+        )),
+      ]);
+      undoLandingRef.current = null;
+      setLandedItemId(null);
+      setPersistenceWarning("Last palette landing undone");
+    };
+    window.addEventListener("keydown", undoLanding);
+    return () => window.removeEventListener("keydown", undoLanding);
+  }, []);
 
   const handleOracleClick = useCallback((oracle: OracleTileItem) => {
     cancelOracleClick();
@@ -1383,7 +1473,7 @@ function BoardPageView({
     )));
   }, []);
 
-  const toggleSpaceGroup = useCallback((id: string) => {
+  const toggleSpaceImport = useCallback((id: string) => {
     setBoardItems((current) => current.map((item) => {
       if (item.id !== id || item.kind !== "space-import") return item;
       if (item.collapsed) {
@@ -1406,17 +1496,10 @@ function BoardPageView({
   const removeSpaceGroup = useCallback((id: string) => {
     const group = spaceGroupsRef.current.find((item) => item.id === id);
     if (!group) return false;
-    const undo = spaceImportUndoRef.current?.groupId === group.groupId
-      ? spaceImportUndoRef.current
-      : null;
-    const originalById = new Map((undo?.adopted ?? []).map((item) => [item.id, item]));
     const memberById = new Map(group.members.map((member) => [member.id, member]));
-
     setBoardItems((current) => current.filter((item) => item.id !== id));
     setTerminalTiles((current) => current.flatMap((item): TerminalTileItem[] => {
       if (item.groupId !== group.groupId) return [item];
-      const original = originalById.get(item.id);
-      if (original) return [original];
       const member = memberById.get(item.id);
       if (!member?.adoptedGeometry) return [];
       const {
@@ -1427,7 +1510,6 @@ function BoardPageView({
       } = item;
       return [{ ...ungrouped, ...member.adoptedGeometry }];
     }));
-    if (undo) spaceImportUndoRef.current = null;
     return true;
   }, []);
 
@@ -1439,27 +1521,6 @@ function BoardPageView({
   const closeTerminal = useCallback((id: string) => {
     setTerminalTiles((current) => current.filter((item) => item.id !== id));
   }, []);
-
-  useEffect(() => {
-    const onUndo = (event: KeyboardEvent) => {
-      if (
-        event.key.toLowerCase() !== "z" ||
-        (!event.metaKey && !event.ctrlKey) ||
-        event.altKey ||
-        event.shiftKey ||
-        event.repeat ||
-        isEditableTarget(event.target)
-      ) {
-        return;
-      }
-      const undo = spaceImportUndoRef.current;
-      if (!undo) return;
-      event.preventDefault();
-      removeSpaceGroup(undo.groupId);
-    };
-    window.addEventListener("keydown", onUndo);
-    return () => window.removeEventListener("keydown", onUndo);
-  }, [removeSpaceGroup]);
 
   const sendToBack = useCallback((id: string) => {
     const items: UserBoardItem[] = [...boardItems, ...terminalTiles];
@@ -1502,7 +1563,7 @@ function BoardPageView({
     setFleetGeometry({});
     setBoardItems([]);
     setTerminalTiles([]);
-    spaceImportUndoRef.current = null;
+    undoLandingRef.current = null;
     topZRef.current = USER_ITEM_MIN_Z - 1;
     setSelectedOracleId(null);
     jumpCursorRef.current = null;
@@ -1761,7 +1822,7 @@ function BoardPageView({
                 selected
                   ? "selected ring-2 ring-[var(--idle)] ring-offset-2 ring-offset-[var(--bg)] shadow-[0_0_14px_var(--idle-glow)]"
                   : ""
-              }`}
+              } ${item.id === landedItemId ? "just-landed" : ""}`}
               onActivate={activateTile}
               onChange={updateAppTile}
               onCommit={updateAppTile}
@@ -1843,8 +1904,10 @@ function BoardPageView({
                     current[id] === mode ? current : { ...current, [id]: mode }
                   ))}
                   streamEligible={item.streamEligible}
-                  streamPriority={item.streamPriority}
                   theme={theme}
+                  streamPriority={item.id === landedItemId
+                    ? STREAM_PRIORITY.focused
+                    : item.streamPriority ?? STREAM_PRIORITY.normal}
                 />
               ) : item.kind === "space-import" ? (
                 <SpaceImportGroup
@@ -1857,7 +1920,7 @@ function BoardPageView({
                       item.collapsed || terminalModes[terminal.id] !== "stream"
                     )
                   )).length}
-                  onToggle={toggleSpaceGroup}
+                  onToggle={toggleSpaceImport}
                   onRemove={removeSpaceGroup}
                 />
               ) : (
@@ -1871,6 +1934,13 @@ function BoardPageView({
           );
         })}
       </Fabric>
+
+      <CommandPalette
+        items={paletteItems}
+        onCommitOracle={pinPaletteOracle}
+        onCommitSpace={importPaletteSpace}
+        emptyBoard={allTiles.length === 0 && !loading}
+      />
 
       {boardMenu && boardMenuActions.length > 0 ? (
         <CanvasContextMenu
@@ -2175,6 +2245,7 @@ export default function App() {
       oracleDisplayPages={oracleDisplayPages}
       mirrorReport={mirror.report}
       modelByOracle={mirrorModels}
+      pulses={pulse.pulses}
       theme={theme}
       onToggleTheme={toggleTheme}
     />
