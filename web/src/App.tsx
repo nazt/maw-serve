@@ -14,8 +14,18 @@ import {
   clearBoardState,
   loadBoardState,
   saveBoardState,
+  type PersistedBoardState,
   type PersistedGeometry,
 } from "./board/persist";
+import PageTabs from "./board/PageTabs";
+import {
+  BOARD_PAGES_STORAGE_KEY,
+  createBoardPage,
+  loadBoardPages,
+  saveBoardPages,
+  useHashPage,
+  type BoardPage,
+} from "./board/pages";
 import TerminalTile, {
   type TerminalTileItem,
 } from "./board/TerminalTile";
@@ -366,8 +376,24 @@ function terminalPane(
     : null;
 }
 
-export default function App() {
-  const [restoredState] = useState(loadBoardState);
+interface BoardPageViewProps {
+  pageId: string;
+  pages: BoardPage[];
+  onSelectPage: (pageId: string) => void;
+  onCreatePage: () => void;
+  onRenamePage: (pageId: string, name: string) => void;
+  onDeletePage: (pageId: string) => void;
+}
+
+function BoardPageView({
+  pageId,
+  pages,
+  onSelectPage,
+  onCreatePage,
+  onRenamePage,
+  onDeletePage,
+}: BoardPageViewProps) {
+  const [restoredState] = useState(() => loadBoardState(pageId));
   const canvas = useCanvas(restoredState.canvas);
   const {
     fleetTiles,
@@ -433,6 +459,14 @@ export default function App() {
   );
   const totals = useMemo(() => summarizeFleet(statusTiles, usage), [statusTiles, usage]);
   const hasOracleTiles = positionedFleetTiles.length > 0;
+  const persistedState: PersistedBoardState = useMemo(() => ({
+    version: 1,
+    fleet: fleetGeometry,
+    items: [...boardItems, ...terminalTiles],
+    canvas: { center: canvas.center, zoom: canvas.zoom },
+  }), [boardItems, canvas.center, canvas.zoom, fleetGeometry, terminalTiles]);
+  const persistedStateRef = useRef(persistedState);
+  persistedStateRef.current = persistedState;
 
   const dismissHint = useCallback(() => {
     setHintState((current) => current === "visible" ? "leaving" : current);
@@ -473,12 +507,7 @@ export default function App() {
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
-      const result = saveBoardState({
-        version: 1,
-        fleet: fleetGeometry,
-        items: [...boardItems, ...terminalTiles],
-        canvas: { center: canvas.center, zoom: canvas.zoom },
-      });
+      const result = saveBoardState(persistedState, pageId);
       setPersistenceWarning(
         result.error ?? (
           result.skippedImages > 0
@@ -492,12 +521,13 @@ export default function App() {
 
     return () => window.clearTimeout(timeout);
   }, [
-    boardItems,
-    canvas.center,
-    canvas.zoom,
-    fleetGeometry,
-    terminalTiles,
+    pageId,
+    persistedState,
   ]);
+
+  useEffect(() => () => {
+    saveBoardState(persistedStateRef.current, pageId);
+  }, [pageId]);
 
   const viewportCenter = useCallback(() => {
     const fabric = canvas.fabricRef.current;
@@ -682,7 +712,7 @@ export default function App() {
   }, []);
 
   const resetLayout = useCallback(() => {
-    clearBoardState();
+    clearBoardState(pageId);
     setFleetGeometry({});
     setBoardItems([]);
     setTerminalTiles([]);
@@ -693,26 +723,38 @@ export default function App() {
     setPersistenceWarning(null);
     initialFitComplete.current = true;
     window.requestAnimationFrame(() => canvas.fit(fleetTiles));
-  }, [canvas, fleetTiles]);
+  }, [canvas, fleetTiles, pageId]);
 
   return (
     <div
       className="h-dvh w-screen overflow-hidden bg-[var(--bg)] text-[var(--ink)]"
+      data-page-id={pageId}
       onPointerDownCapture={dismissHint}
       onWheelCapture={dismissHint}
       onKeyDownCapture={dismissHint}
     >
-      <header className="pointer-events-none fixed left-3 top-3 z-40 font-mono">
-        <h1 className="text-sm font-bold tracking-tight">STOA · board</h1>
-        <time
-          className="text-xs tabular-nums text-[var(--ink-dim)]"
-          dateTime={now.toISOString()}
-        >
-          {clockFormatter.format(now)}
-        </time>
+      <header className="fixed left-3 top-3 z-40 flex max-w-[calc(100vw-1.5rem)] items-start gap-2 font-mono">
+        <div className="pointer-events-none shrink-0">
+          <h1 className="text-sm font-bold tracking-tight">STOA · board</h1>
+          <time
+            className="block text-xs tabular-nums text-[var(--ink-dim)]"
+            dateTime={now.toISOString()}
+          >
+            {clockFormatter.format(now)}
+          </time>
+        </div>
+        <PageTabs
+          pages={pages}
+          activePageId={pageId}
+          onSelect={onSelectPage}
+          onCreate={onCreatePage}
+          onRename={onRenamePage}
+          onDelete={onDeletePage}
+        />
       </header>
 
       <Fabric
+        id="board-fabric"
         canvas={canvas}
         className="bg-[var(--bg)]"
         aria-label="Interactive fleet board"
@@ -866,5 +908,89 @@ export default function App() {
         {totals.active + totals.idle + totals.stale} fleet tiles
       </output>
     </div>
+  );
+}
+
+export default function App() {
+  const [pages, setPages] = useState(loadBoardPages);
+  const { pageId, navigate } = useHashPage(pages);
+
+  useEffect(() => saveBoardPages(pages), [pages]);
+
+  useEffect(() => {
+    const syncPages = (event: StorageEvent) => {
+      if (event.key !== BOARD_PAGES_STORAGE_KEY) return;
+      const next = loadBoardPages();
+      setPages((current) => (
+        JSON.stringify(current) === JSON.stringify(next) ? current : next
+      ));
+    };
+    window.addEventListener("storage", syncPages);
+    return () => window.removeEventListener("storage", syncPages);
+  }, []);
+
+  const createPage = useCallback(() => {
+    const page = createBoardPage(pages);
+    setPages((current) => [...current, page]);
+    navigate(page.id);
+  }, [navigate, pages]);
+
+  const renamePage = useCallback((targetPageId: string, name: string) => {
+    const nextName = name.trim().slice(0, 40);
+    if (!nextName) return;
+    setPages((current) => current.map((page) => (
+      page.id === targetPageId ? { ...page, name: nextName } : page
+    )));
+  }, []);
+
+  const deletePage = useCallback((targetPageId: string) => {
+    if (pages.length <= 1) return;
+    const page = pages.find((candidate) => candidate.id === targetPageId);
+    if (!page || !window.confirm(`Delete board page “${page.name}”?`)) return;
+
+    const targetIndex = pages.findIndex((candidate) => candidate.id === targetPageId);
+    const remaining = pages.filter((candidate) => candidate.id !== targetPageId);
+    if (pageId === targetPageId) {
+      const fallback = remaining[Math.min(targetIndex, remaining.length - 1)];
+      navigate(fallback.id);
+    }
+    setPages(remaining);
+    window.setTimeout(() => clearBoardState(targetPageId), 0);
+  }, [navigate, pageId, pages]);
+
+  useEffect(() => {
+    const cyclePages = (event: KeyboardEvent) => {
+      if (
+        (event.key !== "[" && event.key !== "]") ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.repeat ||
+        isEditableTarget(event.target)
+      ) {
+        return;
+      }
+      const currentIndex = pages.findIndex((page) => page.id === pageId);
+      if (currentIndex < 0 || pages.length < 2) return;
+      event.preventDefault();
+      const direction = event.key === "]" ? 1 : -1;
+      const nextIndex = (currentIndex + direction + pages.length) % pages.length;
+      navigate(pages[nextIndex].id);
+    };
+
+    window.addEventListener("keydown", cyclePages);
+    return () => window.removeEventListener("keydown", cyclePages);
+  }, [navigate, pageId, pages]);
+
+  return (
+    <BoardPageView
+      key={pageId}
+      pageId={pageId}
+      pages={pages}
+      onSelectPage={navigate}
+      onCreatePage={createPage}
+      onRenamePage={renamePage}
+      onDeletePage={deletePage}
+    />
   );
 }
