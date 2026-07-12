@@ -1149,11 +1149,6 @@ function BoardPageView({
       groupId: draft.group.groupId,
       groupGeometry: landing.item,
     });
-    const terminalCount = plan.livePaneCount + plan.polledPaneCount;
-    if (terminalCount > 0 && !window.confirm(
-      `${plan.livePaneCount} live / ${plan.polledPaneCount} poll — pull space ${spaceRef.spaceIndex}?`,
-    )) return false;
-
     const adopted = terminalTilesRef.current.filter((item) => (
       plan.adoptedTerminalIds.includes(item.id)
     ));
