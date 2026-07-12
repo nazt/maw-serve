@@ -283,6 +283,7 @@ interface BoardLinkRateResult {
 
 export class BoardLinkRateLimiter {
   private readonly attempts = new Map<string, number[]>();
+  private readonly pairStates = new Map<string, "connecting" | "connected">();
 
   constructor(
     private readonly windowMs = LINK_RATE_WINDOW_MS,
@@ -290,8 +291,30 @@ export class BoardLinkRateLimiter {
     private readonly maxPerWindow = LINK_RATE_MAX_PER_WINDOW,
   ) {}
 
+  private pairKey(from: string, to: string): string {
+    return [from, to].sort().join("\0");
+  }
+
+  beginConnect(from: string, to: string): boolean {
+    const key = this.pairKey(from, to);
+    if (this.pairStates.has(key)) return false;
+    this.pairStates.set(key, "connecting");
+    return true;
+  }
+
+  finishConnect(from: string, to: string, connected: boolean): void {
+    const key = this.pairKey(from, to);
+    if (this.pairStates.get(key) !== "connecting") return;
+    if (connected) this.pairStates.set(key, "connected");
+    else this.pairStates.delete(key);
+  }
+
+  disconnect(from: string, to: string): void {
+    this.pairStates.delete(this.pairKey(from, to));
+  }
+
   take(from: string, to: string, now = Date.now()): BoardLinkRateResult {
-    const key = [from, to].sort().join("\0");
+    const key = this.pairKey(from, to);
     const cutoff = now - this.windowMs;
     const recent = (this.attempts.get(key) ?? []).filter((at) => at > cutoff && at <= now);
     const last = recent.at(-1);
@@ -445,8 +468,17 @@ export async function linkResponse(
   }
 
   const limiter = dependencies.limiter ?? boardLinkRateLimiter;
+  if (payload.action === "connect" && !limiter.beginConnect(payload.from, payload.to)) {
+    (dependencies.logger ?? console).info(
+      `[board-link] connect ${payload.from} ↔ ${payload.to}; already connected`,
+    );
+    return Response.json({ ok: true, sent: [] });
+  }
+  if (payload.action === "disconnect") limiter.disconnect(payload.from, payload.to);
+
   const rate = limiter.take(payload.from, payload.to, (dependencies.now ?? Date.now)());
   if (!rate.ok) {
+    if (payload.action === "connect") limiter.finishConnect(payload.from, payload.to, false);
     return Response.json(
       { error: "link notification rate limit exceeded" },
       { status: 429, headers: { "retry-after": String(Math.max(1, Math.ceil(rate.retryAfterMs / 1_000))) } },
@@ -464,9 +496,11 @@ export async function linkResponse(
   const sent = results.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
   const failures = results.filter((result) => result.status === "rejected");
   if (failures.length > 0) {
+    if (payload.action === "connect") limiter.finishConnect(payload.from, payload.to, false);
     for (const failure of failures) logger.error("[board-link] maw hey failed", failure.reason);
     return Response.json({ ok: false, sent }, { status: 502 });
   }
+  if (payload.action === "connect") limiter.finishConnect(payload.from, payload.to, true);
   return Response.json({ ok: true, sent });
 }
 

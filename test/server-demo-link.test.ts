@@ -113,6 +113,64 @@ test("connect spawns exactly two argv-only board-tagged maw heys", async () => {
   expect(logs.every((line) => line.startsWith("[board-link] connect alpha ↔ beta; notified "))).toBe(true);
 });
 
+test("an already-live unordered pair does not resend connect notifications", async () => {
+  const limiter = new BoardLinkRateLimiter();
+  const commands: string[][] = [];
+  const dependencies = {
+    census: async () => census("alpha", "beta"),
+    limiter,
+    logger: quietLogger,
+    now: () => 10_000,
+    sendHey: (target: string, message: string) => sendBoardHey(target, message, async (argv) => {
+      commands.push(argv);
+      return { exitCode: 0, stderr: "" };
+    }),
+  };
+
+  const first = await handleRequest(
+    linkRequest({ from: "alpha", to: "beta", action: "connect" }),
+    localServer,
+    dependencies,
+  );
+  const duplicate = await handleRequest(
+    linkRequest({ from: "beta", to: "alpha", action: "connect" }),
+    localServer,
+    dependencies,
+  );
+
+  expect(first.status).toBe(200);
+  expect(await first.json()).toEqual({ ok: true, sent: ["beta", "alpha"] });
+  expect(duplicate.status).toBe(200);
+  expect(await duplicate.json()).toEqual({ ok: true, sent: [] });
+  expect(commands).toHaveLength(2);
+});
+
+test("disconnect clears a live pair so a later connect notifies again", async () => {
+  const limiter = new BoardLinkRateLimiter();
+  let now = 10_000;
+  const actions: string[] = [];
+  const dependencies = {
+    census: async () => census("alpha", "beta"),
+    limiter,
+    logger: quietLogger,
+    now: () => now,
+    sendHey: async (_target: string, message: string) => { actions.push(message); },
+  };
+
+  for (const action of ["connect", "disconnect", "connect"] as const) {
+    const response = await handleRequest(
+      linkRequest({ from: "alpha", to: "beta", action }),
+      localServer,
+      dependencies,
+    );
+    expect(response.status).toBe(200);
+    now += 2_000;
+  }
+
+  expect(actions.filter((message) => message.startsWith("🔗 [board]"))).toHaveLength(4);
+  expect(actions.filter((message) => message.startsWith("🔌 [board]"))).toHaveLength(2);
+});
+
 test("disconnect notifies both ends with the fixed unplug template", async () => {
   const commands: string[][] = [];
   const response = await handleRequest(
@@ -151,7 +209,11 @@ test("unordered oracle pairs are capped at ten notifications per minute", async 
   for (let index = 0; index < 10; index += 1) {
     now = index * 1_000;
     const response = await handleRequest(
-      linkRequest({ from: "alpha", to: "beta", action: "connect" }),
+      linkRequest({
+        from: "alpha",
+        to: "beta",
+        action: index % 2 === 0 ? "connect" : "disconnect",
+      }),
       localServer,
       dependencies,
     );
@@ -160,7 +222,7 @@ test("unordered oracle pairs are capped at ten notifications per minute", async 
 
   now = 10_000;
   const limited = await handleRequest(
-    linkRequest({ from: "beta", to: "alpha", action: "disconnect" }),
+    linkRequest({ from: "beta", to: "alpha", action: "connect" }),
     localServer,
     dependencies,
   );
