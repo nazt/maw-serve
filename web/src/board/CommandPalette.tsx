@@ -43,6 +43,7 @@ interface PreviewState {
 const PREVIEW_DEBOUNCE_MS = 150;
 const PREVIEW_DWELL_MS = 300;
 const PREVIEW_POLL_MS = 2_000;
+const PALETTE_EXIT_MS = 150;
 const MAX_RESULTS_PER_SECTION = 40;
 const MAX_STREAM_PREVIEW_CHARS = 28_000;
 const MAX_SPACE_THUMBNAIL_WINDOWS = 8;
@@ -263,6 +264,7 @@ export default function CommandPalette({
   emptyBoard = false,
 }: CommandPaletteProps) {
   const [open, setOpen] = useState(false);
+  const [closing, setClosing] = useState(false);
   const [query, setQuery] = useState("");
   const [activeId, setActiveId] = useState<string | null>(null);
   const [preferredKind, setPreferredKind] = useState<PaletteKind | null>(null);
@@ -282,6 +284,7 @@ export default function CommandPalette({
   const dialogRef = useRef<HTMLElement>(null);
   const launcherRef = useRef<HTMLButtonElement>(null);
   const openerRef = useRef<HTMLElement | null>(null);
+  const closeTimerRef = useRef<number | null>(null);
 
   const ranked = useMemo(
     () => rankPaletteItems(items, query, frecency),
@@ -309,23 +312,41 @@ export default function CommandPalette({
   const active = navigable.find((item) => item.id === activeId) ?? navigable[0] ?? null;
 
   const show = useCallback((kind: PaletteKind | null = null) => {
+    if (closeTimerRef.current !== null) {
+      window.clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
     const activeElement = document.activeElement;
     openerRef.current = activeElement instanceof HTMLElement && activeElement !== document.body
       ? activeElement
       : launcherRef.current;
     setActiveId(null);
     setPreferredKind(kind);
+    setClosing(false);
     setOpen(true);
   }, []);
 
   const close = useCallback(() => {
-    setOpen(false);
-    setQuery("");
-    setConfirmingSpaceId(null);
-    setConfirmingPeerId(null);
-    setMarkedIds(new Set());
-    setPreview({ status: "idle", transport: "snapshot", text: "", updatedAt: null });
-    window.setTimeout(() => (openerRef.current ?? launcherRef.current)?.focus(), 0);
+    if (closing) return;
+    setClosing(true);
+    const delay = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      ? 0
+      : PALETTE_EXIT_MS;
+    closeTimerRef.current = window.setTimeout(() => {
+      closeTimerRef.current = null;
+      setOpen(false);
+      setClosing(false);
+      setQuery("");
+      setConfirmingSpaceId(null);
+      setConfirmingPeerId(null);
+      setMarkedIds(new Set());
+      setPreview({ status: "idle", transport: "snapshot", text: "", updatedAt: null });
+      window.setTimeout(() => (openerRef.current ?? launcherRef.current)?.focus(), 0);
+    }, delay);
+  }, [closing]);
+
+  useEffect(() => () => {
+    if (closeTimerRef.current !== null) window.clearTimeout(closeTimerRef.current);
   }, []);
 
   useEffect(() => {
@@ -370,7 +391,7 @@ export default function CommandPalette({
   }, [open]);
 
   useEffect(() => {
-    if (!open || active?.kind !== "oracle") {
+    if (!open || closing || active?.kind !== "oracle") {
       setPreview({ status: "idle", transport: "snapshot", text: "", updatedAt: null });
       return;
     }
@@ -502,7 +523,7 @@ export default function CommandPalette({
       stopStream();
       releaseLease?.();
     };
-  }, [active?.id, active?.kind, active?.kind === "oracle" ? active.session : null, active?.kind === "oracle" ? active.window : null, open]);
+  }, [active?.id, active?.kind, active?.kind === "oracle" ? active.session : null, active?.kind === "oracle" ? active.window : null, closing, open]);
 
   const commit = useCallback(async (item: PaletteItem) => {
     if (item.kind === "space" && confirmingSpaceId !== item.id) {
@@ -676,7 +697,7 @@ export default function CommandPalette({
       ) : null}
 
       {open ? (
-        <div className="palette-backdrop" onMouseDown={(event) => {
+        <div className="palette-backdrop" data-state={closing ? "closing" : "open"} onMouseDown={(event) => {
           if (event.target === event.currentTarget) close();
         }}>
           <section
