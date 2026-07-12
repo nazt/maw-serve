@@ -83,6 +83,7 @@ import OracleTileContent, {
   oracleHasConnectAffordance,
 } from "./fleet/OracleTileContent";
 import StatusBar, { summarizeFleet } from "./fleet/StatusBar";
+import { resolveBoardTelemetryState } from "./fleet/boardState";
 import {
   NodeConnectHandle,
   NodeEdgeOverlay,
@@ -550,18 +551,56 @@ function BoardToolbar({
 
 interface BoardStateProps {
   loading: boolean;
+  refreshing: boolean;
   error: Error | null;
+  hasCensus: boolean;
   hasTiles: boolean;
+  onRetry: () => Promise<void>;
 }
 
-function BoardState({ loading, error, hasTiles }: BoardStateProps) {
-  if (hasTiles) return null;
+const boardStateButtonClass = "inline-flex min-h-11 items-center justify-center rounded-md border border-[var(--idle)] bg-[var(--idle)] px-4 font-mono text-xs font-bold text-[var(--ink-inverse)] transition-colors duration-150 hover:bg-[var(--active)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--idle)] disabled:cursor-wait disabled:opacity-60 motion-reduce:transition-none";
 
-  if (error && shouldOfferHostConnection()) {
+function BoardState({
+  loading,
+  refreshing,
+  error,
+  hasCensus,
+  hasTiles,
+  onRetry,
+}: BoardStateProps) {
+  const state = resolveBoardTelemetryState({ loading, error, hasCensus, hasTiles });
+  if (state === "ready") return null;
+
+  if (state === "loading") {
+    return (
+      <section
+        className="pointer-events-none absolute inset-x-4 bottom-40 top-24 z-10 mx-auto grid w-[min(58rem,calc(100vw-2rem))] grid-cols-2 content-center gap-3 md:grid-cols-3"
+        data-board-state="loading"
+        aria-label="Loading fleet telemetry"
+        aria-live="polite"
+      >
+        <span className="sr-only">Acquiring fleet telemetry</span>
+        {Array.from({ length: 9 }, (_, index) => (
+          <span
+            className={`h-24 rounded-md border border-[var(--line)] bg-[var(--surface)] motion-safe:animate-pulse ${index > 5 ? "hidden md:block" : ""}`}
+            key={index}
+            aria-hidden="true"
+          >
+            <span className="mx-3 mt-3 block h-2 w-2 rounded-full bg-[var(--stale)]" />
+            <span className="mx-3 mt-3 block h-2 w-3/5 rounded-sm bg-[var(--surface-2)]" />
+            <span className="mx-3 mt-2 block h-2 w-2/5 rounded-sm bg-[var(--surface-2)]" />
+          </span>
+        ))}
+      </section>
+    );
+  }
+
+  if (state === "error" && shouldOfferHostConnection()) {
     const exampleHost = "http://localhost:48900";
     return (
       <section
-        className="absolute left-1/2 top-1/2 z-10 w-[min(32rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-lg border border-[var(--line)] bg-[var(--surface)] p-5 font-sans"
+        className="absolute left-1/2 top-1/2 z-[35] w-[min(32rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-lg border border-[var(--line)] bg-[var(--surface)] p-5 font-sans"
+        data-board-state="error"
         role="alert"
         aria-labelledby="stoa-connect-title"
       >
@@ -607,29 +646,79 @@ function BoardState({ loading, error, hasTiles }: BoardStateProps) {
             Example: {exampleHost}
           </p>
         </form>
-        <a
-          className="mt-3 inline-flex font-mono text-xs text-[var(--ink-dim)] underline decoration-[var(--line)] underline-offset-4 hover:text-[var(--ink)]"
-          href={connectHostUrl("")}
-        >
-          Use same-origin server
-        </a>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            className={boardStateButtonClass}
+            disabled={refreshing}
+            onClick={() => void onRetry()}
+          >
+            {refreshing ? "Retrying…" : "Retry connection"}
+          </button>
+          <a
+            className="inline-flex min-h-11 items-center font-mono text-xs text-[var(--ink-dim)] underline decoration-[var(--line)] underline-offset-4 hover:text-[var(--ink)]"
+            href={connectHostUrl("")}
+          >
+            Use same-origin server
+          </a>
+        </div>
       </section>
     );
   }
 
-  const message = loading
-    ? "Acquiring fleet telemetry…"
-    : error
-      ? "Fleet telemetry is unavailable · retrying"
-      : "No oracle agents are currently reporting";
+  if (state === "error") {
+    return (
+      <section
+        className="absolute left-1/2 top-1/2 z-[35] w-[min(30rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-lg border border-[var(--line)] bg-[var(--surface)] p-5 text-center"
+        data-board-state="error"
+        role="alert"
+        aria-labelledby="fleet-error-title"
+      >
+        <span className="mx-auto grid h-12 w-12 place-items-center rounded-full border border-[var(--error)] font-mono text-lg text-[var(--error)]" aria-hidden="true">!</span>
+        <h2 id="fleet-error-title" className="mt-4 text-xl font-semibold text-[var(--ink)]">
+          Fleet telemetry is out of reach
+        </h2>
+        <p className="mx-auto mt-2 max-w-[48ch] text-sm leading-relaxed text-[var(--ink-dim)]">
+          Your board layout is safe. Check that maw-serve is running, then retry the census connection.
+        </p>
+        <button
+          type="button"
+          className={`${boardStateButtonClass} mt-5`}
+          disabled={refreshing}
+          onClick={() => void onRetry()}
+        >
+          {refreshing ? "Retrying census…" : "Retry census"}
+        </button>
+        <p className="mt-3 font-mono text-[10px] text-[var(--ink-faint)]">
+          Automatic retries continue in the background
+        </p>
+      </section>
+    );
+  }
 
   return (
-    <p
-      className={`pointer-events-none absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 font-mono text-sm ${error ? "text-[var(--ink)]" : "text-[var(--ink-dim)]"}`}
-      role={error ? "alert" : "status"}
+    <section
+      className="absolute left-1/2 top-1/2 z-10 w-[min(34rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 text-center"
+      data-board-state="empty"
+      role="status"
+      aria-labelledby="empty-fleet-title"
     >
-      {message}
-    </p>
+      <span className="font-mono text-5xl font-bold tabular-nums text-[var(--ink)]" aria-hidden="true">0</span>
+      <h2 id="empty-fleet-title" className="mt-2 text-xl font-semibold text-[var(--ink)]">
+        No oracles are reporting
+      </h2>
+      <p className="mx-auto mt-2 max-w-[52ch] text-sm leading-relaxed text-[var(--ink-dim)]">
+        Stoa reached census successfully, but the fleet is empty. Start an oracle or refresh when one comes online.
+      </p>
+      <button
+        type="button"
+        className={`${boardStateButtonClass} mt-5`}
+        disabled={refreshing}
+        onClick={() => void onRetry()}
+      >
+        {refreshing ? "Checking fleet…" : "Refresh fleet"}
+      </button>
+    </section>
   );
 }
 
@@ -806,7 +895,10 @@ function BoardPageView({
     census,
     usage,
     loading,
+    refreshing,
     error,
+    usageError,
+    refresh,
   } = useFleet();
   const now = useClock();
   const [addingImage, setAddingImage] = useState(false);
@@ -2053,7 +2145,14 @@ function BoardPageView({
           linkedEdgeId={nodeGraph.linkedEdgeId}
           onDelete={nodeGraph.disconnect}
         />
-        <BoardState loading={loading} error={error} hasTiles={hasOracleTiles} />
+        <BoardState
+          loading={loading}
+          refreshing={refreshing}
+          error={error}
+          hasCensus={census !== null}
+          hasTiles={hasOracleTiles}
+          onRetry={refresh}
+        />
         {dropActive && dropPoint ? (
           <ImageDropGhost
             x={dropPoint.x - 180}
@@ -2332,6 +2431,7 @@ function BoardPageView({
         items={statusTiles}
         usage={usage}
         error={error}
+        usageError={usageError}
         theme={theme}
         onToggleTheme={onToggleTheme}
       />

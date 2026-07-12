@@ -144,7 +144,10 @@ export interface UseFleetResult {
   census: CensusPayload | null;
   usage: UsagePayload | null;
   loading: boolean;
+  refreshing: boolean;
   error: Error | null;
+  censusError: Error | null;
+  usageError: Error | null;
   refresh: () => Promise<void>;
   addNote: (placement?: BoardPlacement) => NoteBoardItem;
   addImage: (
@@ -419,6 +422,31 @@ async function fetchJson<T>(url: string, signal: AbortSignal): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+export interface FleetRefreshOutcome {
+  census: CensusPayload | null;
+  usage: UsagePayload | null;
+  censusError: Error | null;
+  usageError: Error | null;
+}
+
+function settledError(result: PromiseSettledResult<unknown>): Error | null {
+  if (result.status === "fulfilled") return null;
+  return result.reason instanceof Error ? result.reason : new Error(String(result.reason));
+}
+
+export function resolveFleetRefresh(
+  censusResult: PromiseSettledResult<CensusPayload>,
+  usageResult: PromiseSettledResult<UsagePayload>,
+  previousCensus: CensusPayload | null,
+): FleetRefreshOutcome {
+  return {
+    census: censusResult.status === "fulfilled" ? censusResult.value : previousCensus,
+    usage: usageResult.status === "fulfilled" ? usageResult.value : null,
+    censusError: settledError(censusResult),
+    usageError: settledError(usageResult),
+  };
+}
+
 export function useFleet(options: UseFleetOptions = {}): UseFleetResult {
   const censusUrl = options.censusUrl ?? DEFAULT_CENSUS_URL;
   const usageUrl = options.usageUrl ?? DEFAULT_USAGE_URL;
@@ -428,36 +456,57 @@ export function useFleet(options: UseFleetOptions = {}): UseFleetResult {
   const [census, setCensus] = useState<CensusPayload | null>(null);
   const [usage, setUsage] = useState<UsagePayload | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<Error | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [censusError, setCensusError] = useState<Error | null>(null);
+  const [usageError, setUsageError] = useState<Error | null>(null);
   const requestRef = useRef<Promise<void> | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
+  const censusRef = useRef<CensusPayload | null>(null);
 
   const refresh = useCallback((): Promise<void> => {
     if (requestRef.current) return requestRef.current;
 
     const controller = new AbortController();
     controllerRef.current = controller;
-    const request = Promise.all([
+    setRefreshing(true);
+    const request = Promise.allSettled([
       fetchJson<CensusPayload>(censusUrl, controller.signal),
       fetchJson<UsagePayload>(usageUrl, controller.signal),
     ])
-      .then(([nextCensus, nextUsage]) => {
-        setCensus(nextCensus);
-        setUsage(nextUsage);
-        setFleetTiles((current) => (
-          mergeFleetTiles(current, buildFleetTiles(nextCensus, nextUsage))
-        ));
-        setError(null);
+      .then(([censusResult, usageResult]) => {
+        if (controller.signal.aborted) return;
+        const outcome = resolveFleetRefresh(censusResult, usageResult, censusRef.current);
+
+        if (censusResult.status === "fulfilled") {
+          censusRef.current = censusResult.value;
+          setCensus(censusResult.value);
+        }
+        setUsage(outcome.usage);
+        if (outcome.census) {
+          const nextTiles = buildFleetTiles(outcome.census, outcome.usage);
+          setFleetTiles((current) => mergeFleetTiles(current, nextTiles));
+        }
+        setCensusError(outcome.censusError);
+        setUsageError(outcome.usageError);
         setLoading(false);
       })
       .catch((reason: unknown) => {
-        if (reason instanceof DOMException && reason.name === "AbortError") return;
-        setError(reason instanceof Error ? reason : new Error(String(reason)));
+        if (controller.signal.aborted) return;
+        const nextError = reason instanceof Error ? reason : new Error(String(reason));
+        setCensusError(nextError);
+        setUsageError(nextError);
+        setUsage(null);
+        setFleetTiles((current) => (
+          censusRef.current
+            ? mergeFleetTiles(current, buildFleetTiles(censusRef.current, null))
+            : current
+        ));
         setLoading(false);
       })
       .finally(() => {
         if (requestRef.current === request) requestRef.current = null;
         if (controllerRef.current === controller) controllerRef.current = null;
+        if (!controller.signal.aborted) setRefreshing(false);
       });
 
     requestRef.current = request;
@@ -547,7 +596,10 @@ export function useFleet(options: UseFleetOptions = {}): UseFleetResult {
     census,
     usage,
     loading,
-    error,
+    refreshing,
+    error: censusError,
+    censusError,
+    usageError,
     refresh,
     addNote,
     addImage,
