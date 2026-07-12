@@ -206,12 +206,10 @@ function SpaceRowMiniMap({ item }: { item: SpacePaletteItem }) {
 }
 
 function PeerTrustChip({ trust }: { trust: PeerTrust }) {
-  const urgent = trust === "key-changed";
   return (
     <span
-      className="palette-option__kind"
+      className="palette-peer-trust"
       data-peer-trust={trust}
-      style={urgent ? { color: "var(--error)" } : undefined}
     >
       {TRUST_LABEL[trust]}
     </span>
@@ -246,7 +244,7 @@ function ResultRow({
         <strong>{item.kind === "peer" ? item.handle : item.name}</strong>
         <span>{item.kind === "peer" ? item.fingerprint : item.path}</span>
       </span>
-      <span style={{ display: "flex", alignItems: "center", gap: "0.4rem", alignSelf: "start" }}>
+      <span className="palette-option__meta">
         {item.kind === "space" ? <SpaceRowMiniMap item={item} /> : null}
         {item.kind === "peer"
           ? <PeerTrustChip trust={item.trust} />
@@ -281,6 +279,7 @@ export default function CommandPalette({
   const [previewNow, setPreviewNow] = useState(Date.now);
   const [announcement, setAnnouncement] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLElement>(null);
   const launcherRef = useRef<HTMLButtonElement>(null);
   const openerRef = useRef<HTMLElement | null>(null);
 
@@ -333,6 +332,21 @@ export default function CommandPalette({
     if (!open) return;
     inputRef.current?.focus();
   }, [open]);
+
+  useEffect(() => {
+    if (!open || !active) return;
+    const frame = window.requestAnimationFrame(() => {
+      const option = document.getElementById(optionId(active));
+      const list = option?.closest<HTMLElement>(".palette-list");
+      if (!option || !list) return;
+      const optionRect = option.getBoundingClientRect();
+      const listRect = list.getBoundingClientRect();
+      if (optionRect.top < listRect.top + 8 || optionRect.bottom > listRect.bottom - 8) {
+        option.scrollIntoView({ block: "center" });
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [active, open]);
 
   useEffect(() => {
     if (!open) return;
@@ -570,6 +584,29 @@ export default function CommandPalette({
     }
   };
 
+  const trapDialogFocus = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (event.key !== "Tab") return;
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+    )).filter((element) => !element.hidden && element.getClientRects().length > 0);
+    if (focusable.length === 0) {
+      event.preventDefault();
+      inputRef.current?.focus();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && (document.activeElement === first || !dialog.contains(document.activeElement))) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
   useEffect(() => {
     const onShortcut = (event: KeyboardEvent) => {
       const command = event.metaKey || event.ctrlKey;
@@ -621,11 +658,18 @@ export default function CommandPalette({
       </button>
 
       {emptyBoard && !open ? (
-        <section className="palette-hero" aria-labelledby="palette-hero-title">
+        <section
+          className="palette-hero"
+          aria-labelledby="palette-hero-title"
+          aria-describedby="palette-hero-copy"
+        >
           <p>fleet command surface</p>
           <h2 id="palette-hero-title">Bring an oracle here.</h2>
+          <span id="palette-hero-copy" className="palette-hero__copy">
+            Search the fleet, peek live, then pin the terminal to this board.
+          </span>
           <button type="button" onClick={() => show("oracle")}>
-            Search with <kbd>⌘K</kbd>
+            Search fleet <kbd>⌘K</kbd>
           </button>
         </section>
       ) : null}
@@ -635,10 +679,12 @@ export default function CommandPalette({
           if (event.target === event.currentTarget) close();
         }}>
           <section
+            ref={dialogRef}
             className="command-palette"
             role="dialog"
             aria-modal="true"
             aria-label="Search fleet targets"
+            onKeyDown={trapDialogFocus}
           >
             <div className="command-palette__search">
               <span aria-hidden="true">⌘K</span>
@@ -732,17 +778,20 @@ export default function CommandPalette({
                   <>
                     <header>
                       <div><strong>{active.name}</strong><span>{active.path}</span></div>
-                      <span data-preview-status={preview.transport === "live" ? "ready" : preview.status}>
-                        {preview.transport === "live" ? "● LIVE" : "◌ snapshot"}
+                      <span
+                        className="palette-preview__transport"
+                        data-preview-status={preview.transport === "live" ? "ready" : preview.status}
+                        data-transport={preview.transport}
+                        aria-label={preview.transport === "live" ? "Live preview" : "Snapshot preview"}
+                      >
+                        <span aria-hidden="true">◌ snapshot</span>
+                        <span aria-hidden="true">● LIVE</span>
                       </span>
                     </header>
-                    <pre data-state={preview.status}>
+                    <pre data-state={preview.status} data-transport={preview.transport}>
                       {preview.status === "loading" ? "Acquiring redacted pane snapshot…" : preview.text}
                       {preview.transport === "live" ? (
-                        <span
-                          aria-hidden="true"
-                          style={{ animation: "terminal-live-pulse 1.2s ease-in-out infinite" }}
-                        >
+                        <span className="palette-preview__cursor" aria-hidden="true">
                           ▌
                         </span>
                       ) : null}
@@ -780,19 +829,19 @@ export default function CommandPalette({
                       <PeerTrustChip trust={active.trust} />
                     </header>
                     <div
-                      className="palette-minimap"
+                      className="palette-peer-preview"
+                      data-peer-trust={active.trust}
                       aria-label={`${active.handle} peer identity; preview disabled before consent`}
-                      style={{ display: "grid", placeItems: "center", padding: "2rem" }}
                     >
-                      <div style={{ maxWidth: "24rem", textAlign: "center" }}>
-                        <strong style={{ display: "block", fontSize: "0.9rem" }}>
+                      <div className="palette-peer-preview__content">
+                        <strong>
                           {active.trust === "new"
                             ? "🔒 not paired — connect to request access"
                             : active.trust === "key-changed"
                               ? "⚠ identity key changed — verify before reconnecting"
                               : "Identity verified · content remains private until consent"}
                         </strong>
-                        <p style={{ marginTop: "0.65rem", color: "var(--ink-dim)", fontFamily: "var(--font-mono)", fontSize: "0.65rem" }}>
+                        <p>
                           Peer PEEK is disabled. No frame or terminal content crosses this trust boundary.
                         </p>
                       </div>
