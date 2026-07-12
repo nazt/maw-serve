@@ -4,6 +4,7 @@ import {
   apiUrl,
   privateNetworkAddressSpace,
   resolveHost,
+  shouldOfferHostConnection,
 } from "../web/src/clients/api";
 
 test("host resolution prefers URL, then saved host, then same-origin", () => {
@@ -40,4 +41,10 @@ test("PNA declares loopback separately from LAN address space", () => {
     .toBe("local");
   expect(privateNetworkAddressSpace("https://fleet.example/api/agora/census"))
     .toBeNull();
+});
+
+test("connection help appears for hosted pages and explicitly selected failing hosts", () => {
+  expect(shouldOfferHostConnection("http://127.0.0.1:48906", "http:")).toBeTrue();
+  expect(shouldOfferHostConnection("", "https:")).toBeTrue();
+  expect(shouldOfferHostConnection("", "http:")).toBeFalse();
 });

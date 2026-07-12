@@ -132,6 +132,9 @@ export function connectHostUrl(host = "http://localhost:48900"): string {
   return url.toString();
 }
 
-export function shouldOfferHostConnection(): boolean {
-  return typeof window !== "undefined" && window.location.protocol === "https:";
+export function shouldOfferHostConnection(
+  host = activeHost,
+  protocol = typeof window === "undefined" ? "" : window.location.protocol,
+): boolean {
+  return Boolean(host) || protocol === "https:";
 }

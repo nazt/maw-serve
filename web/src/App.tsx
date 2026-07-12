@@ -434,14 +434,40 @@ function BoardState({ loading, error, hasTiles }: BoardStateProps) {
             Could not reach {activeHost}
           </p>
         ) : null}
-        <code className="mt-3 block overflow-x-auto rounded bg-[var(--bg)] px-3 py-2 font-mono text-xs text-[var(--ink)]">
-          ?host={exampleHost}
-        </code>
+        <form className="mt-4" method="get">
+          <label
+            className="mb-1 block font-mono text-[11px] text-[var(--ink-dim)]"
+            htmlFor="stoa-host"
+          >
+            maw-serve URL
+          </label>
+          <div className="flex gap-2">
+            <input
+              id="stoa-host"
+              name="host"
+              type="url"
+              required
+              defaultValue={activeHost || exampleHost}
+              placeholder={exampleHost}
+              className="min-h-9 min-w-0 flex-1 rounded-md border border-[var(--line)] bg-[var(--bg)] px-3 font-mono text-xs text-[var(--ink)] outline-none focus:border-[var(--idle)]"
+              aria-describedby="stoa-host-hint"
+            />
+            <button
+              className="min-h-9 shrink-0 rounded-md bg-[var(--idle)] px-3 text-sm font-semibold text-[var(--bg)] transition-colors duration-150 hover:bg-[var(--active)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--idle)]"
+              type="submit"
+            >
+              Connect
+            </button>
+          </div>
+          <p id="stoa-host-hint" className="mt-2 font-mono text-[11px] text-[var(--ink-dim)]">
+            Example: {exampleHost}
+          </p>
+        </form>
         <a
-          className="mt-4 inline-flex min-h-9 items-center rounded-md bg-[var(--idle)] px-3 text-sm font-semibold text-[var(--bg)] transition-colors duration-150 hover:bg-[var(--active)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--idle)]"
-          href={connectHostUrl(exampleHost)}
+          className="mt-3 inline-flex font-mono text-xs text-[var(--ink-dim)] underline decoration-[var(--line)] underline-offset-4 hover:text-[var(--ink)]"
+          href={connectHostUrl("")}
         >
-          Connect to localhost
+          Use same-origin server
         </a>
       </section>
     );
