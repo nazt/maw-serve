@@ -112,22 +112,22 @@ export function StatusBar({
 
   return (
     <footer
-      className={`fixed inset-x-0 bottom-0 z-40 flex h-8 items-center gap-4 border-t border-[var(--line)] bg-[var(--surface)] px-3 font-sans ${className}`}
+      className={`fixed inset-x-0 bottom-0 z-40 flex h-8 items-center gap-2 border-t border-[var(--line)] bg-[var(--surface)] px-3 font-sans sm:gap-4 ${className}`}
       aria-label={label}
       aria-live="polite"
     >
-      <div className="flex min-w-0 flex-1 items-center gap-4 overflow-hidden">
+      <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden sm:gap-4">
         {error ? (
           <span className="truncate font-mono text-xs text-[var(--ink)]">
             telemetry interrupted · retrying
           </span>
         ) : (
           <>
+            <Metric label="tok/h" value={compactNumber.format(summary.burnPerHour)} />
+            <span className="h-3 w-px shrink-0 bg-[var(--line)]" aria-hidden="true" />
             <Metric label="active" value={summary.active} />
             <Metric label="idle" value={summary.idle} />
             <Metric label="stale" value={summary.stale} />
-            <span className="h-3 w-px bg-[var(--line)]" aria-hidden="true" />
-            <Metric label="tok/h" value={compactNumber.format(summary.burnPerHour)} />
             <Metric
               label={summary.accounts === 1 ? "account" : "accounts"}
               value={summary.accounts}
@@ -137,7 +137,7 @@ export function StatusBar({
       </div>
       <button
         type="button"
-        className="inline-flex h-6 shrink-0 items-center gap-1.5 rounded border border-[var(--line)] bg-[var(--surface-2)] px-2 font-mono text-[10px] font-semibold leading-none text-[var(--ink-dim)] transition-colors duration-150 hover:text-[var(--ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--idle)] motion-reduce:transition-none"
+        className="hidden h-6 shrink-0 items-center gap-1.5 rounded border border-[var(--line)] bg-[var(--surface-2)] px-2 font-mono text-[10px] font-semibold leading-none text-[var(--ink-dim)] transition-colors duration-150 hover:text-[var(--ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--idle)] motion-reduce:transition-none sm:inline-flex"
         aria-label={`Switch to ${nextTheme} mode`}
         title={`Current mode: ${theme}. Switch to ${nextTheme}.`}
         data-theme-toggle={theme}
@@ -146,7 +146,7 @@ export function StatusBar({
         <span className="h-1.5 w-1.5 rounded-full bg-[var(--active)] shadow-[0_0_5px_var(--active-glow)]" aria-hidden="true" />
         <span>{theme}</span>
       </button>
-      <details className="build-badge group relative shrink-0 font-mono">
+      <details className="build-badge group relative hidden shrink-0 font-mono sm:block">
         <summary
           className="inline-flex h-6 cursor-pointer items-center gap-1.5 rounded border border-[var(--line)] bg-[var(--surface-2)] px-2 text-[10px] font-semibold leading-none tabular-nums text-[var(--ink-faint)] transition-colors duration-150 hover:text-[var(--ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--idle)] motion-reduce:transition-none"
           aria-label={`${buildBadge}. Open build details.`}
