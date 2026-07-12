@@ -6,9 +6,9 @@ import {
   encodeSseData,
   handleRequest,
   parsePaneDimensions,
-  redactPaneOutput,
   streamFrameDelta,
 } from "../server-demo";
+import { redactSecrets } from "../src/redact";
 
 test("stream parameters reuse capture validation", () => {
   expect(captureTarget("01-agora", "1")).toBe("01-agora:1");
@@ -30,7 +30,7 @@ test("pane redaction preserves ANSI while removing obvious secrets", () => {
     "super-private-material",
     "-----END TEST PRIVATE KEY-----",
   ].join("\n");
-  const output = redactPaneOutput(input);
+  const output = redactSecrets(input);
 
   expect(output).toContain("\u001b[31mcolored\u001b[0m");
   expect(output).toContain("API_KEY=[REDACTED]");

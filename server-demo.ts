@@ -1,6 +1,7 @@
 import { unlinkSync } from "node:fs";
 
 import { resolveBuildIdentity, type StoaBuildIdentity } from "./build-identity";
+import { redactSecrets } from "./src/redact";
 
 const PORT = Number(process.env.MAW_SERVE_PORT ?? 48_901);
 const PUBLIC_DIR = `${import.meta.dir}/public`;
@@ -293,7 +294,7 @@ export function captureLines(rawLines: string | null): number | null {
 }
 
 function stripAnsi(text: string): string {
-  // Terminal snapshots are rendered as plain monospace text in v1.
+  // Presentation-only: callers must still pass served content through redactSecrets.
   return text.replace(/[\u001B\u009B][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[-a-zA-Z\d\/#&.:=?%@~_]+)*)?\u0007)|(?:(?:\d{1,4}(?:[;:]\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g, "");
 }
 
@@ -335,34 +336,6 @@ async function paneDimensions(target: string): Promise<PaneDimensions | null> {
   return runMawPanes([target]);
 }
 
-export function redactPaneOutput(text: string): string {
-  let redacted = text.replace(
-    /-----BEGIN [^-\n]*PRIVATE KEY-----[\s\S]*?-----END [^-\n]*PRIVATE KEY-----/gi,
-    "[REDACTED_PRIVATE_KEY]",
-  );
-
-  const replacements: Array<[RegExp, string]> = [
-    [/\bsk-(?:ant-)?[A-Za-z0-9_-]{12,}\b/g, "[REDACTED_TOKEN]"],
-    [/\b(?:ghp|github_pat|glpat|xox[baprs])[_-][A-Za-z0-9_-]{12,}\b/g, "[REDACTED_TOKEN]"],
-    [/\bAKIA[0-9A-Z]{16}\b/g, "[REDACTED_ACCESS_KEY]"],
-    [/\b(Bearer\s+)[A-Za-z0-9._~+/=-]{8,}/gi, "$1[REDACTED]"],
-    [
-      /\b((?:api[_-]?key|access[_-]?token|auth[_-]?token|refresh[_-]?token|secret|password|passwd|account(?:_id|\s+id)?)\s*[:=]\s*)["']?[^\s"',;]+/gi,
-      "$1[REDACTED]",
-    ],
-    [
-      /\b([A-Z][A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASSWD|API_KEY)\s*=\s*)["']?[^\s"']+/g,
-      "$1[REDACTED]",
-    ],
-    [/([?&](?:token|access_token|api_key|key|secret)=)[^&\s]+/gi, "$1[REDACTED]"],
-  ];
-
-  for (const [pattern, replacement] of replacements) {
-    redacted = redacted.replace(pattern, replacement);
-  }
-  return redacted;
-}
-
 async function runRawCapture(target: string, lines: number): Promise<string> {
   const process = Bun.spawn(["maw", "peek", target, "--lines", String(lines)], {
     stdout: "pipe",
@@ -380,8 +353,12 @@ async function runRawCapture(target: string, lines: number): Promise<string> {
   return stdout;
 }
 
+export function sanitizeCaptureOutput(text: string): string {
+  return redactSecrets(stripAnsi(text));
+}
+
 async function runCapture(target: string, lines: number): Promise<string> {
-  return stripAnsi(await runRawCapture(target, lines));
+  return sanitizeCaptureOutput(await runRawCapture(target, lines));
 }
 
 async function captureResponse(url: URL): Promise<Response> {
@@ -522,7 +499,7 @@ async function runFallbackTail(tail: SharedTail): Promise<void> {
   while (!tail.stopped && tail.subscribers.size > 0) {
     const startedAt = Date.now();
     try {
-      const nextFrame = redactPaneOutput(await runRawCapture(tail.target, tail.lines));
+      const nextFrame = redactSecrets(await runRawCapture(tail.target, tail.lines));
       if (tail.stopped) return;
 
       const delta = needsClear
@@ -561,7 +538,7 @@ function broadcastCompletedLines(tail: SharedTail, text: string): void {
       tail.redactingPrivateKey = !endsPrivateKey;
       publish(tail, "[REDACTED_PRIVATE_KEY]\n");
     } else {
-      publish(tail, redactPaneOutput(completedLine));
+      publish(tail, redactSecrets(completedLine));
     }
     newline = tail.lineBuffer.indexOf("\n");
   }
@@ -672,7 +649,7 @@ async function initialSnapshot(tail: SharedTail, lines: number): Promise<string>
   }
 
   const request = runRawCapture(tail.target, lines).then((frame) => {
-    const redacted = redactPaneOutput(frame);
+    const redacted = redactSecrets(frame);
     const lastPrivateKeyBegin = [...frame.matchAll(/-----BEGIN [^-\n]*PRIVATE KEY-----/gi)].at(-1)?.index ?? -1;
     const lastPrivateKeyEnd = [...frame.matchAll(/-----END [^-\n]*PRIVATE KEY-----/gi)].at(-1)?.index ?? -1;
     tail.redactingPrivateKey = lastPrivateKeyBegin > lastPrivateKeyEnd;
