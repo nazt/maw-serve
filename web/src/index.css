@@ -294,12 +294,12 @@
     background-image:
       radial-gradient(
         circle,
-        oklch(var(--ink-channels) / 0.34) 0 0.75px,
+        oklch(var(--star-primary-channels) / 0.34) 0 0.75px,
         oklch(var(--bg-channels) / 0) 1px
       ),
       radial-gradient(
         circle,
-        oklch(var(--idle-channels) / 0.28) 0 0.65px,
+        oklch(var(--star-secondary-channels) / 0.28) 0 0.65px,
         oklch(var(--bg-channels) / 0) 1px
       );
     background-position:
@@ -316,12 +316,12 @@
     background-image:
       linear-gradient(
         to right,
-        oklch(var(--idle-channels) / 0.12) 1px,
+        oklch(var(--star-secondary-channels) / 0.12) 1px,
         oklch(var(--bg-channels) / 0) 1px
       ),
       linear-gradient(
         to bottom,
-        oklch(var(--idle-channels) / 0.12) 1px,
+        oklch(var(--star-secondary-channels) / 0.12) 1px,
         oklch(var(--bg-channels) / 0) 1px
       );
     background-size: 64px 64px;

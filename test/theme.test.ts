@@ -3,18 +3,19 @@ import { describe, expect, test } from "bun:test";
 import { isTheme, resolveTheme } from "../web/src/theme";
 
 describe("Stoa theme preference", () => {
-  test("a saved light or dark choice overrides the system preference", () => {
-    expect(resolveTheme("light", true)).toBe("light");
-    expect(resolveTheme("dark", false)).toBe("dark");
+  test("a saved plain or phosphor choice is restored", () => {
+    expect(resolveTheme("plain")).toBe("plain");
+    expect(resolveTheme("phosphor")).toBe("phosphor");
   });
 
-  test("first visit follows the system preference", () => {
-    expect(resolveTheme(null, true)).toBe("dark");
-    expect(resolveTheme(null, false)).toBe("light");
+  test("plain is the default when no choice has been saved", () => {
+    expect(resolveTheme(null)).toBe("plain");
   });
 
-  test("the dormant phosphor preset is not a selectable UI theme", () => {
-    expect(isTheme("phosphor")).toBe(false);
-    expect(resolveTheme("phosphor", false)).toBe("light");
+  test("legacy and dormant light values fall back to plain", () => {
+    expect(isTheme("light")).toBe(false);
+    expect(isTheme("dark")).toBe(false);
+    expect(resolveTheme("light")).toBe("plain");
+    expect(resolveTheme("dark")).toBe("plain");
   });
 });

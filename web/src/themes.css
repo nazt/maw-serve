@@ -1,6 +1,5 @@
 :root,
-:root[data-theme="dark"],
-:root[data-theme="phosphor"] {
+:root[data-theme="plain"] {
   color-scheme: dark;
 
   --bg-channels: 0.15 0.02 220;
@@ -23,6 +22,8 @@
   --error-channels: 0.68 0.2 25;
   --heat-track-channels: 0.3 0.02 220;
   --heat-track-alpha: 0.72;
+  --star-primary-channels: var(--ink-channels);
+  --star-secondary-channels: var(--idle-channels);
 
   --terminal-ansi-black-channels: var(--bg-channels);
   --terminal-ansi-white-channels: var(--ink-dim-channels);
@@ -48,59 +49,55 @@
   --stargrid-opacity: 0.12;
 }
 
-:root[data-theme="light"] {
-  color-scheme: light;
-
-  --bg-channels: 0.965 0.006 220;
-  --surface-channels: 0.99 0.002 220;
-  --surface-2-channels: 0.92 0.008 220;
-  --line-channels: 0.72 0.018 220;
-  --note-surface-channels: 0.94 0.045 75;
-  --terminal-surface-channels: 0.985 0.003 220;
-  --terminal-header-channels: 0.94 0.006 220;
-
-  --ink-channels: 0.18 0 0;
-  --ink-dim-channels: 0.38 0 0;
-  --ink-faint-channels: 0.46 0 0;
-  --ink-inverse-channels: 0.98 0 0;
-
-  --active-channels: 0.43 0.14 155;
-  --idle-channels: 0.42 0.105 225;
-  --stale-channels: 0.4 0.025 230;
-  --pinned-channels: 0.46 0.13 70;
-  --error-channels: 0.45 0.18 25;
-  --heat-track-channels: 0.78 0.012 220;
-  --heat-track-alpha: 0.55;
-
-  --terminal-ansi-black-channels: 0.12 0 0;
-  --terminal-ansi-white-channels: 0.38 0 0;
-  --terminal-ansi-bright-white-channels: 0.18 0 0;
-
-  --active-glow: oklch(var(--active-channels) / 0.12);
-  --idle-glow: oklch(var(--idle-channels) / 0.09);
-  --stale-glow: oklch(var(--stale-channels) / 0.05);
-  --pinned-glow: oklch(var(--pinned-channels) / 0.13);
-  --error-glow: oklch(var(--error-channels) / 0.13);
-  --attention-warn-glow: oklch(var(--pinned-channels) / 0.18);
-  --attention-critical-glow: oklch(var(--error-channels) / 0.2);
-  --active-breathe-low: oklch(var(--active-channels) / 0.06);
-  --active-breathe-high: oklch(var(--active-channels) / 0.15);
-  --heat-cool-glow: oklch(var(--active-channels) / 0.1);
-  --heat-warm-glow: oklch(var(--pinned-channels) / 0.12);
-  --heat-hot-glow: oklch(var(--error-channels) / 0.14);
-  --elevation-shadow: oklch(0.15 0 0 / 0.14);
-  --stale-tile-opacity: 1;
-  --tile-hover-brightness: 0.985;
-  --tile-hover-saturation: 1;
-  --starfield-opacity: 0.16;
-  --stargrid-opacity: 0.08;
-}
-
-/* Dormant preset: dark infrastructure with the former green content ink. */
 :root[data-theme="phosphor"] {
-  --ink-channels: 0.9 0.08 155;
-  --ink-dim-channels: 0.76 0.055 155;
-  --ink-faint-channels: 0.66 0.04 155;
+  color-scheme: dark;
+
+  --bg-channels: 0.115 0.03 165;
+  --surface-channels: 0.165 0.035 165;
+  --surface-2-channels: 0.215 0.045 160;
+  --line-channels: 0.5 0.13 155;
+  --note-surface-channels: 0.285 0.07 75;
+  --terminal-surface-channels: 0.09 0.025 165;
+  --terminal-header-channels: 0.14 0.04 165;
+
+  /* Text remains achromatic: phosphor is signal and atmosphere, never ink. */
+  --ink-channels: 0.96 0 0;
+  --ink-dim-channels: 0.76 0 0;
+  --ink-faint-channels: 0.68 0 0;
+  --ink-inverse-channels: 0.12 0 0;
+
+  --active-channels: 0.88 0.23 150;
+  --idle-channels: 0.8 0.13 195;
+  --stale-channels: 0.58 0.055 165;
+  --pinned-channels: 0.84 0.17 75;
+  --error-channels: 0.7 0.21 25;
+  --heat-track-channels: 0.35 0.07 160;
+  --heat-track-alpha: 0.82;
+  --star-primary-channels: var(--active-channels);
+  --star-secondary-channels: var(--idle-channels);
+
+  --terminal-ansi-black-channels: var(--bg-channels);
+  --terminal-ansi-white-channels: var(--ink-dim-channels);
+  --terminal-ansi-bright-white-channels: var(--ink-channels);
+
+  --active-glow: oklch(var(--active-channels) / 0.46);
+  --idle-glow: oklch(var(--idle-channels) / 0.3);
+  --stale-glow: oklch(var(--stale-channels) / 0.16);
+  --pinned-glow: oklch(var(--pinned-channels) / 0.38);
+  --error-glow: oklch(var(--error-channels) / 0.4);
+  --attention-warn-glow: oklch(var(--pinned-channels) / 0.58);
+  --attention-critical-glow: oklch(var(--error-channels) / 0.66);
+  --active-breathe-low: oklch(var(--active-channels) / 0.3);
+  --active-breathe-high: oklch(var(--active-channels) / 0.56);
+  --heat-cool-glow: oklch(var(--active-channels) / 0.42);
+  --heat-warm-glow: oklch(var(--pinned-channels) / 0.44);
+  --heat-hot-glow: oklch(var(--error-channels) / 0.5);
+  --elevation-shadow: oklch(0.03 0 0 / 0.64);
+  --stale-tile-opacity: 0.74;
+  --tile-hover-brightness: 1.08;
+  --tile-hover-saturation: 1.18;
+  --starfield-opacity: 0.32;
+  --stargrid-opacity: 0.18;
 }
 
 :root {

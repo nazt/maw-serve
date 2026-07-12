@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="color-scheme" content="dark light" />
+    <meta name="color-scheme" content="dark" />
     <meta
       name="description"
       content="Stoa interactive fleet board for live oracle operations."
@@ -14,11 +14,9 @@
         const key = "stoa-theme";
         let saved = null;
         try { saved = localStorage.getItem(key); } catch {}
-        const theme = saved === "dark" || saved === "light"
-          ? saved
-          : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        const theme = saved === "phosphor" ? "phosphor" : "plain";
         document.documentElement.dataset.theme = theme;
-        document.documentElement.style.colorScheme = theme;
+        document.documentElement.style.colorScheme = "dark";
       })();
     </script>
   </head>

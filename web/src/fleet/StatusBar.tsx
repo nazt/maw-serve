@@ -110,7 +110,7 @@ export function StatusBar({
   const label = error
     ? "Fleet telemetry link interrupted"
     : `Fleet status: ${summary.active} active, ${summary.idle} idle, ${summary.stale} stale, ${summary.burnPerHour} tokens per hour, ${summary.accounts} accounts`;
-  const nextTheme = theme === "dark" ? "light" : "dark";
+  const nextTheme = theme === "plain" ? "phosphor" : "plain";
 
   return (
     <footer
@@ -139,13 +139,14 @@ export function StatusBar({
       </div>
       <button
         type="button"
-        className="grid h-6 w-6 shrink-0 place-items-center rounded border border-[var(--line)] bg-[var(--surface-2)] text-sm leading-none text-[var(--ink-dim)] transition-colors duration-150 hover:text-[var(--ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--idle)] motion-reduce:transition-none"
-        aria-label={`Switch to ${nextTheme} theme`}
-        title={`Switch to ${nextTheme} theme`}
+        className="inline-flex h-6 shrink-0 items-center gap-1.5 rounded border border-[var(--line)] bg-[var(--surface-2)] px-2 font-mono text-[10px] font-semibold leading-none text-[var(--ink-dim)] transition-colors duration-150 hover:text-[var(--ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--idle)] motion-reduce:transition-none"
+        aria-label={`Switch to ${nextTheme} mode`}
+        title={`Current mode: ${theme}. Switch to ${nextTheme}.`}
         data-theme-toggle={theme}
         onClick={onToggleTheme}
       >
-        <span aria-hidden="true">{theme === "dark" ? "☀︎" : "☾"}</span>
+        <span className="h-1.5 w-1.5 rounded-full bg-[var(--active)] shadow-[0_0_5px_var(--active-glow)]" aria-hidden="true" />
+        <span>{theme}</span>
       </button>
       <span
         className="max-w-[48vw] shrink-0 truncate rounded border border-[var(--line)] px-1.5 py-0.5 font-mono text-[11px] leading-none tabular-nums text-[var(--ink-faint)]"
