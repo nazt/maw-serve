@@ -6,23 +6,28 @@ async function bodyAndType(pathname: string) {
   return { res, body: await res.text(), type: res.headers.get("content-type") ?? "" };
 }
 
-test("GET /api/agora/ returns placeholder SPA shell", async () => {
+test("GET /api/agora/ returns the built SPA shell", async () => {
   const { res, body, type } = await bodyAndType("/api/agora/");
   expect(res.status).toBe(200);
   expect(type).toContain("text/html");
-  expect(body).toContain("Stoa board — placeholder");
+  expect(body).toContain("<title>STOA · board</title>");
+  expect(body).toContain('<div id="root"></div>');
 });
 
 test("GET /api/agora/some/deep/route falls back to SPA shell", async () => {
   const { res, body, type } = await bodyAndType("/api/agora/some/deep/route");
   expect(res.status).toBe(200);
   expect(type).toContain("text/html");
-  expect(body).toContain("Stoa board — placeholder");
+  expect(body).toContain('<div id="root"></div>');
 });
 
-test("GET /api/agora/app.js returns real JS asset", async () => {
-  const { res, body, type } = await bodyAndType("/api/agora/app.js");
+test("GET serves the hashed JS referenced by the SPA shell", async () => {
+  const { body: index } = await bodyAndType("/api/agora/");
+  const assetPath = index.match(/src="(\/api\/agora\/assets\/[^"]+\.js)"/)?.[1];
+  expect(assetPath).toBeTruthy();
+
+  const { res, body, type } = await bodyAndType(assetPath!);
   expect(res.status).toBe(200);
   expect(type).toContain("application/javascript");
-  expect(body).toContain("Stoa board placeholder loaded");
+  expect(body.length).toBeGreaterThan(1_000);
 });

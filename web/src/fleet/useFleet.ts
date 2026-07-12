@@ -9,10 +9,11 @@ import {
   type ImageSourceOptions,
   type NoteBoardItem,
 } from "../board/boardItems";
+import { apiFetch, API_ENDPOINTS } from "../clients/api";
 
 const DEFAULT_POLL_INTERVAL_MS = 8_000;
-const DEFAULT_CENSUS_URL = "/api/agora/census";
-const DEFAULT_USAGE_URL = "/api/agora/usage";
+const DEFAULT_CENSUS_URL = API_ENDPOINTS.census;
+const DEFAULT_USAGE_URL = API_ENDPOINTS.usage;
 const ORACLE_WIDTH = 210;
 const ORACLE_HEIGHT = 96;
 const GRID_STEP_X = 240;
@@ -371,7 +372,7 @@ export function createNoteTile(placement?: BoardPlacement): NoteBoardItem {
 }
 
 async function fetchJson<T>(url: string, signal: AbortSignal): Promise<T> {
-  const response = await fetch(url, {
+  const response = await apiFetch(url, {
     signal,
     cache: "no-store",
     headers: { Accept: "application/json" },

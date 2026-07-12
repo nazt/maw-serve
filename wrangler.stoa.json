@@ -1,0 +1,17 @@
+{
+  "name": "maw-serve-stoa",
+  "compatibility_date": "2026-07-12",
+  "main": "./worker/stoa-static.js",
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true
+  },
+  "routes": [
+    {
+      "pattern": "stoa.example.com",
+      "custom_domain": true
+    }
+  ]
+}
