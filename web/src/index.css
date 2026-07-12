@@ -129,6 +129,20 @@
 }
 
 @layer components {
+  .terminal-tile__viewport .xterm {
+    height: 100%;
+  }
+
+  .terminal-tile__viewport .xterm-viewport {
+    background: transparent !important;
+    overscroll-behavior: contain;
+  }
+
+  .terminal-live-indicator {
+    display: inline-block;
+    animation: terminal-live-pulse 1.8s var(--ease-out-expo) infinite;
+  }
+
   /* Two low-opacity world layers give the fabric depth without visual noise. */
   .fabric {
     isolation: isolate;
@@ -579,6 +593,19 @@
   }
 }
 
+@keyframes terminal-live-pulse {
+  0%,
+  100% {
+    opacity: 0.62;
+    filter: drop-shadow(0 0 1px var(--active-glow));
+  }
+
+  50% {
+    opacity: 1;
+    filter: drop-shadow(0 0 4px var(--active-glow));
+  }
+}
+
 @media (max-width: 42rem) {
   .board-hint {
     top: 3.25rem;
@@ -657,5 +684,11 @@
       0 0 10px 1px var(--attention-glow);
     filter: none;
     opacity: 1;
+  }
+
+  .terminal-live-indicator {
+    animation: none;
+    opacity: 1;
+    filter: none;
   }
 }
