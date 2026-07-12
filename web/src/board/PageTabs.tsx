@@ -127,8 +127,8 @@ export default function PageTabs({
                 <button
                   type="button"
                   className="ml-0.5 text-[11px] text-[var(--ink-dim)] opacity-0 transition-opacity hover:text-[var(--ink)] focus:opacity-100 focus:outline-none group-hover:opacity-100"
-                  aria-label={`Delete ${page.name} board page`}
-                  title="Delete page"
+                  aria-label={`${page.system === "space" ? "Close" : "Delete"} ${page.name} board page`}
+                  title={page.system === "space" ? "Close tab" : "Delete page"}
                   onClick={() => onDelete(page.id)}
                 >
                   ×
