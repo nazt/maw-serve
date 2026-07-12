@@ -16,6 +16,7 @@ export interface TileProps<Item extends TileItem = TileItem> {
   className?: string;
   style?: CSSProperties;
   minWidth?: number;
+  minHeight?: number;
   onChange?: (item: Item, kind: TileChangeKind) => void;
   onCommit?: (item: Item, kind: TileChangeKind) => void;
 }
@@ -67,6 +68,7 @@ export function Tile<Item extends TileItem>({
   className,
   style,
   minWidth,
+  minHeight,
   onChange,
   onCommit,
 }: TileProps<Item>) {
@@ -77,7 +79,15 @@ export function Tile<Item extends TileItem>({
     resizing,
     dragHandlers,
     resizeHandlers,
-  } = useDrag({ item, siblings, canvas, minWidth, onChange, onCommit });
+  } = useDrag({
+    item,
+    siblings,
+    canvas,
+    minWidth,
+    minHeight,
+    onChange,
+    onCommit,
+  });
   const screen = transformPoint(canvas.worldToScreen, {
     x: geometry.x,
     y: geometry.y,

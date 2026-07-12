@@ -8,6 +8,7 @@ import {
 } from "react";
 
 export const MIN_TILE_WIDTH = 160;
+export const MIN_TILE_HEIGHT = 72;
 export const SNAP_SCREEN_PX = 8;
 export const TOUCH_HOLD_MS = 180;
 export const TOUCH_CANCEL_PX = 10;
@@ -45,6 +46,7 @@ export interface UseDragOptions<Item extends TileItem> {
   siblings: readonly Item[];
   canvas: CanvasTransform;
   minWidth?: number;
+  minHeight?: number;
   onChange?: (item: Item, kind: TileChangeKind) => void;
   onCommit?: (item: Item, kind: TileChangeKind) => void;
 }
@@ -97,6 +99,7 @@ type ResizeInteraction = {
   origin: PointerSnapshot;
   startWorld: Point;
   startWidth: number;
+  startHeight: number;
   moved: boolean;
 };
 
@@ -113,12 +116,16 @@ function sameGeometry(left: TileGeometry, right: TileGeometry): boolean {
   return left.x === right.x && left.y === right.y && left.w === right.w && left.h === right.h;
 }
 
-function geometryFromItem(item: TileItem, minWidth: number): TileGeometry {
+function geometryFromItem(
+  item: TileItem,
+  minWidth: number,
+  minHeight: number,
+): TileGeometry {
   return {
     x: Math.round(finite(item.x)),
     y: Math.round(finite(item.y)),
     w: Math.max(minWidth, finite(item.w, minWidth)),
-    h: Math.max(1, finite(item.h, 1)),
+    h: Math.max(minHeight, finite(item.h, minHeight)),
   };
 }
 
@@ -243,6 +250,36 @@ export function snapPosition<Item extends TileItem>(
   };
 }
 
+function snapResizeEdge<Item extends TileItem>(
+  item: Item,
+  proposedSize: number,
+  siblings: readonly Item[],
+  zoom: number,
+  minimum: number,
+  axis: "x" | "y",
+): { size: number; guides: SnapGuide[] } {
+  const threshold = SNAP_SCREEN_PX / Math.max(0.01, finite(zoom, 1));
+  const edge = finite(item[axis]) + proposedSize;
+  let best: SnapDelta = null;
+
+  for (const siblingEdge of siblingEdges(item, siblings, axis)) {
+    const delta = siblingEdge - edge;
+    const snappedSize = Math.round(proposedSize + delta);
+    if (
+      snappedSize >= minimum &&
+      Math.abs(delta) <= threshold &&
+      (!best || Math.abs(delta) < Math.abs(best.delta))
+    ) {
+      best = { delta, guide: siblingEdge };
+    }
+  }
+
+  return {
+    size: Math.max(minimum, Math.round(proposedSize + (best?.delta ?? 0))),
+    guides: best ? [{ axis, value: best.guide }] : [],
+  };
+}
+
 export function snapWidth<Item extends TileItem>(
   item: Item,
   proposedWidth: number,
@@ -250,24 +287,33 @@ export function snapWidth<Item extends TileItem>(
   zoom: number,
   minWidth = MIN_TILE_WIDTH,
 ): { width: number; guides: SnapGuide[] } {
-  const threshold = SNAP_SCREEN_PX / Math.max(0.01, finite(zoom, 1));
-  const right = finite(item.x) + proposedWidth;
-  let best: SnapDelta = null;
+  const snapped = snapResizeEdge(
+    item,
+    proposedWidth,
+    siblings,
+    zoom,
+    minWidth,
+    "x",
+  );
+  return { width: snapped.size, guides: snapped.guides };
+}
 
-  for (const edge of siblingEdges(item, siblings, "x")) {
-    const delta = edge - right;
-    if (
-      Math.abs(delta) <= threshold &&
-      (!best || Math.abs(delta) < Math.abs(best.delta))
-    ) {
-      best = { delta, guide: edge };
-    }
-  }
-
-  return {
-    width: Math.max(minWidth, Math.round(proposedWidth + (best?.delta ?? 0))),
-    guides: best ? [{ axis: "x", value: best.guide }] : [],
-  };
+export function snapHeight<Item extends TileItem>(
+  item: Item,
+  proposedHeight: number,
+  siblings: readonly Item[],
+  zoom: number,
+  minHeight = MIN_TILE_HEIGHT,
+): { height: number; guides: SnapGuide[] } {
+  const snapped = snapResizeEdge(
+    item,
+    proposedHeight,
+    siblings,
+    zoom,
+    minHeight,
+    "y",
+  );
+  return { height: snapped.size, guides: snapped.guides };
 }
 
 function isInteractiveTarget(target: EventTarget | null, tile: HTMLElement): boolean {
@@ -292,10 +338,11 @@ export function useDrag<Item extends TileItem>({
   siblings,
   canvas,
   minWidth = MIN_TILE_WIDTH,
+  minHeight = MIN_TILE_HEIGHT,
   onChange,
   onCommit,
 }: UseDragOptions<Item>): UseDragResult {
-  const initialGeometry = geometryFromItem(item, minWidth);
+  const initialGeometry = geometryFromItem(item, minWidth, minHeight);
   const [geometry, setGeometry] = useState<TileGeometry>(initialGeometry);
   const [guides, setGuides] = useState<SnapGuide[]>([]);
   const [activeMode, setActiveMode] = useState<TileChangeKind | null>(null);
@@ -376,18 +423,33 @@ export function useDrag<Item extends TileItem>({
       minWidth,
       interaction.startWidth + world.x - interaction.startWorld.x,
     );
-    const snapped = snapWidth(
+    const proposedHeight = Math.max(
+      minHeight,
+      interaction.startHeight + world.y - interaction.startWorld.y,
+    );
+    const snappedWidth = snapWidth(
       itemRef.current,
       proposedWidth,
       siblingsRef.current,
       currentCanvas.zoom,
       minWidth,
     );
+    const snappedHeight = snapHeight(
+      itemRef.current,
+      proposedHeight,
+      siblingsRef.current,
+      currentCanvas.zoom,
+      minHeight,
+    );
     interaction.moved = true;
     userResizedRef.current = true;
-    setGuides(snapped.guides);
-    publishGeometry({ ...current, w: snapped.width }, "resize");
-  }, [minWidth, publishGeometry]);
+    setGuides([...snappedWidth.guides, ...snappedHeight.guides]);
+    publishGeometry({
+      ...current,
+      w: snappedWidth.width,
+      h: snappedHeight.height,
+    }, "resize");
+  }, [minHeight, minWidth, publishGeometry]);
 
   const schedulePointer = useCallback((pointer: PointerSnapshot) => {
     latestPointerRef.current = pointer;
@@ -471,6 +533,7 @@ export function useDrag<Item extends TileItem>({
         y: pointer.pageY,
       }),
       startWidth: geometryRef.current.w,
+      startHeight: geometryRef.current.h,
       moved: false,
     };
     setActiveMode("resize");
@@ -530,7 +593,7 @@ export function useDrag<Item extends TileItem>({
   }, [finishPointer]);
 
   useEffect(() => {
-    const nextFromProps = geometryFromItem(item, minWidth);
+    const nextFromProps = geometryFromItem(item, minWidth, minHeight);
     const nextId = String(item.id);
 
     if (itemIdRef.current !== nextId) {
@@ -548,14 +611,14 @@ export function useDrag<Item extends TileItem>({
       x: userPositionedRef.current ? current.x : nextFromProps.x,
       y: userPositionedRef.current ? current.y : nextFromProps.y,
       w: userResizedRef.current ? current.w : nextFromProps.w,
-      h: nextFromProps.h,
+      h: userResizedRef.current ? current.h : nextFromProps.h,
     };
     Object.assign(item, next);
     if (!sameGeometry(current, next)) {
       geometryRef.current = next;
       setGeometry(next);
     }
-  }, [clearInteraction, item, item.h, item.id, item.w, item.x, item.y, minWidth]);
+  }, [clearInteraction, item, item.h, item.id, item.w, item.x, item.y, minHeight, minWidth]);
 
   useEffect(() => () => {
     const interaction = interactionRef.current;
