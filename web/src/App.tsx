@@ -11,7 +11,11 @@ import { Fabric } from "./canvas/Fabric";
 import CanvasContextMenu, {
   type CanvasMenuAction,
 } from "./canvas/ContextMenu";
-import { useCanvas, type CanvasPoint } from "./canvas/useCanvas";
+import {
+  useCanvas,
+  type CanvasPoint,
+  type CanvasSafeArea,
+} from "./canvas/useCanvas";
 import {
   activeHost,
   connectHostUrl,
@@ -137,6 +141,13 @@ const ORACLE_BASE_Z = 1;
 const ORACLE_ATTENTION_Z = 6;
 const ORACLE_FRONT_Z = 9;
 const USER_ITEM_MIN_Z = 10;
+const BOARD_FIT_PADDING = 16;
+const INITIAL_CHROME_SAFE_AREA: CanvasSafeArea = {
+  top: 64,
+  right: 8,
+  bottom: 112,
+  left: 8,
+};
 
 function initialOpenSpacePages(): OpenSpacePage[] {
   const saved = loadOpenSpacePages();
@@ -331,7 +342,7 @@ interface BoardToolbarProps {
   attentionCritical: boolean;
   onAddNote: () => void;
   onAddImage: () => Promise<void>;
-  onFit: () => void;
+  onFrameReadable: () => void;
   onReset: () => void;
   disabled: boolean;
   addingImage: boolean;
@@ -349,7 +360,7 @@ function BoardToolbar({
   attentionCritical,
   onAddNote,
   onAddImage,
-  onFit,
+  onFrameReadable,
   onReset,
   disabled,
   addingImage,
@@ -383,7 +394,7 @@ function BoardToolbar({
 
   return (
     <div
-      className="fixed bottom-11 left-1/2 z-40 flex w-max max-w-[calc(100vw-1rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-1 rounded-lg bg-[var(--surface)] p-1 shadow-[0_0_0_1px_var(--line)]"
+      className="pointer-events-auto flex w-max max-w-full flex-wrap items-center justify-center gap-1 rounded-lg bg-[var(--surface)] p-1 shadow-[0_0_0_1px_var(--line)]"
       role="toolbar"
       aria-label="Board controls"
     >
@@ -395,7 +406,8 @@ function BoardToolbar({
         aria-keyshortcuts="J"
         title="Cycle recently active oracles (J)"
       >
-        <span>Jump to active</span>
+        <span className="hidden lg:inline">Jump to active</span>
+        <span className="lg:hidden">Jump</span>
         <kbd className="font-mono text-[10px] font-medium text-[var(--ink-dim)]">J</kbd>
       </button>
       <button
@@ -415,7 +427,10 @@ function BoardToolbar({
         }. Cycle attention targets with A.`}
         title="Cycle oracles that need attention (A)"
       >
-        <span aria-hidden="true">⚠ {attentionCount} need attention</span>
+        <span className="hidden lg:inline" aria-hidden="true">
+          ⚠ {attentionCount} need attention
+        </span>
+        <span className="lg:hidden" aria-hidden="true">⚠ {attentionCount}</span>
         <kbd className="font-mono text-[10px] font-medium text-current">A</kbd>
       </button>
       <div className="relative" ref={addGroupRef}>
@@ -468,12 +483,13 @@ function BoardToolbar({
       <button
         type="button"
         className={toolbarButtonClass}
-        onClick={onFit}
+        onClick={onFrameReadable}
         disabled={disabled}
         aria-keyshortcuts="Shift+1"
-        title="Fit all tiles · Shift+1"
+        title="Frame the board at a readable zoom · Shift+1"
       >
-        Fit all
+        <span className="hidden lg:inline">Frame readable</span>
+        <span className="lg:hidden">Frame</span>
       </button>
       <div
         className="flex h-11 items-stretch overflow-visible rounded-md border border-[var(--line)] bg-[var(--surface)]"
@@ -517,7 +533,8 @@ function BoardToolbar({
         className={`${toolbarButtonClass} text-[var(--ink-dim)]`}
         onClick={onReset}
       >
-        Reset layout
+        <span className="hidden lg:inline">Reset layout</span>
+        <span className="lg:hidden">Reset</span>
       </button>
     </div>
   );
@@ -764,7 +781,16 @@ function BoardPageView({
 }: BoardPageViewProps) {
   const [restoredState] = useState(() => loadBoardState(pageId));
   const [restoredItems] = useState(() => normalizeUserItemZ(restoredState.items));
-  const canvas = useCanvas(restoredState.canvas);
+  const boardHeaderRef = useRef<HTMLElement>(null);
+  const bottomRailRef = useRef<HTMLDivElement>(null);
+  const [chromeSafeArea, setChromeSafeArea] = useState<CanvasSafeArea>(
+    INITIAL_CHROME_SAFE_AREA,
+  );
+  const canvas = useCanvas({
+    ...restoredState.canvas,
+    fitPadding: BOARD_FIT_PADDING,
+    fitSafeArea: chromeSafeArea,
+  });
   const nodeGraph = useNodeEdges(pageId);
   const edgeDrag = useNodeEdgeDrag(nodeGraph.connect);
   const {
@@ -890,6 +916,38 @@ function BoardPageView({
   const persistedStateRef = useRef(persistedState);
   persistedStateRef.current = persistedState;
 
+  useEffect(() => {
+    const update = () => {
+      const header = boardHeaderRef.current?.getBoundingClientRect();
+      const rail = bottomRailRef.current?.getBoundingClientRect();
+      const railTop = rail?.top ?? window.innerHeight - INITIAL_CHROME_SAFE_AREA.bottom;
+      const next: CanvasSafeArea = {
+        top: Math.ceil(header?.bottom ?? INITIAL_CHROME_SAFE_AREA.top),
+        right: INITIAL_CHROME_SAFE_AREA.right,
+        bottom: Math.ceil(window.innerHeight - railTop),
+        left: INITIAL_CHROME_SAFE_AREA.left,
+      };
+      setChromeSafeArea((current) => (
+        current.top === next.top &&
+        current.right === next.right &&
+        current.bottom === next.bottom &&
+        current.left === next.left
+          ? current
+          : next
+      ));
+    };
+
+    update();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update);
+    if (boardHeaderRef.current) observer?.observe(boardHeaderRef.current);
+    if (bottomRailRef.current) observer?.observe(bottomRailRef.current);
+    window.addEventListener("resize", update);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", update);
+    };
+  }, []);
+
   const dismissHint = useCallback(() => {
     setHintState((current) => current === "visible" ? "leaving" : current);
   }, []);
@@ -995,11 +1053,27 @@ function BoardPageView({
     if (!fabric) return { x: canvas.center[0], y: canvas.center[1] };
 
     const bounds = fabric.getBoundingClientRect();
+    const safeLeft = Math.min(
+      bounds.right - 1,
+      bounds.left + chromeSafeArea.left + BOARD_FIT_PADDING,
+    );
+    const safeTop = Math.min(
+      bounds.bottom - 1,
+      bounds.top + chromeSafeArea.top + BOARD_FIT_PADDING,
+    );
+    const safeRight = Math.max(
+      safeLeft + 1,
+      bounds.right - chromeSafeArea.right - BOARD_FIT_PADDING,
+    );
+    const safeBottom = Math.max(
+      safeTop + 1,
+      bounds.bottom - chromeSafeArea.bottom - BOARD_FIT_PADDING,
+    );
     return canvas.screenToWorld({
-      clientX: bounds.left + bounds.width / 2,
-      clientY: bounds.top + bounds.height / 2,
+      clientX: (safeLeft + safeRight) / 2,
+      clientY: (safeTop + safeBottom) / 2,
     });
-  }, [canvas]);
+  }, [canvas, chromeSafeArea]);
 
   const nextUserZ = useCallback(() => {
     topZRef.current = Math.max(USER_ITEM_MIN_Z - 1, topZRef.current) + 1;
@@ -1359,7 +1433,7 @@ function BoardPageView({
       : null,
     [allTiles, selectedOracleId],
   );
-  const fitAll = useCallback(() => canvas.fit(allTiles), [allTiles, canvas]);
+  const frameReadable = useCallback(() => canvas.fit(allTiles), [allTiles, canvas]);
   const fitSelection = useCallback(() => {
     if (selectedTile) canvas.fit([selectedTile]);
   }, [canvas, selectedTile]);
@@ -1379,7 +1453,7 @@ function BoardPageView({
 
       if (event.shiftKey && (event.code === "Digit1" || event.code === "Digit2")) {
         event.preventDefault();
-        if (event.code === "Digit1") fitAll();
+        if (event.code === "Digit1") frameReadable();
         else fitSelection();
         return;
       }
@@ -1408,7 +1482,7 @@ function BoardPageView({
   }, [
     canvas.zoomBy,
     canvas.zoomTo,
-    fitAll,
+    frameReadable,
     fitSelection,
     jumpToActive,
     jumpToAttention,
@@ -1711,9 +1785,9 @@ function BoardPageView({
         },
         {
           id: "fit",
-          label: "Fit all",
+          label: "Frame readable",
           hint: "⇧1",
-          onSelect: fitAll,
+          onSelect: frameReadable,
         },
         {
           id: "fit-selection",
@@ -1797,7 +1871,7 @@ function BoardPageView({
     census,
     deleteBoardItem,
     focusOracle,
-    fitAll,
+    frameReadable,
     fitSelection,
     openTerminal,
     onToggleTheme,
@@ -1816,7 +1890,10 @@ function BoardPageView({
       onWheelCapture={dismissHint}
       onKeyDownCapture={dismissHint}
     >
-      <header className="fixed left-3 top-3 z-40 flex max-w-[calc(100vw-1.5rem)] items-start gap-2 font-mono">
+      <header
+        ref={boardHeaderRef}
+        className="fixed left-3 top-3 z-40 flex max-w-[calc(100vw-1.5rem)] items-start gap-2 font-mono"
+      >
         <div className="pointer-events-none shrink-0">
           <h1 className="text-sm font-bold tracking-tight">STOA · board</h1>
           <time
@@ -2123,36 +2200,49 @@ function BoardPageView({
         </aside>
       ) : null}
 
-      <aside className="status-legend" aria-label="Oracle status legend">
-        {STATUS_LEGEND.map(([status, label]) => (
-          <span className="status-legend__item" key={status}>
+      <div
+        ref={bottomRailRef}
+        className="pointer-events-none fixed inset-x-0 bottom-8 z-40 flex flex-wrap items-center justify-center gap-2 bg-[var(--bg)] px-2 shadow-[0_-1px_0_var(--line)]"
+        data-board-bottom-rail="true"
+      >
+        <aside
+          className="flex min-h-8 shrink-0 items-center gap-2.5 rounded-md bg-[var(--surface)] px-2 py-1.5 font-mono text-[10px] leading-none text-[var(--ink-dim)] shadow-[0_0_0_1px_var(--line)]"
+          aria-label="Oracle status legend"
+        >
+          {STATUS_LEGEND.map(([status, label]) => (
             <span
-              className="status-legend__dot"
-              data-status={status}
-              aria-hidden="true"
-            />
-            <span>{label}</span>
-          </span>
-        ))}
-      </aside>
+              className="status-legend__item"
+              key={status}
+              aria-label={`${label} status`}
+            >
+              <span
+                className="status-legend__dot"
+                data-status={status}
+                aria-hidden="true"
+              />
+              <span className="hidden lg:inline">{label}</span>
+            </span>
+          ))}
+        </aside>
 
-      <BoardToolbar
-        zoom={canvas.zoom}
-        onZoomIn={() => canvas.zoomBy(1.2)}
-        onZoomOut={() => canvas.zoomBy(1 / 1.2)}
-        onResetZoom={() => canvas.zoomTo(1)}
-        onJumpToActive={jumpToActive}
-        jumpDisabled={jumpTargets.length === 0}
-        onJumpToAttention={jumpToAttention}
-        attentionCount={attentionSummary.count}
-        attentionCritical={attentionSummary.criticalCount > 0}
-        onAddNote={addNoteAtViewportCenter}
-        onAddImage={addImageAtViewportCenter}
-        onFit={fitAll}
-        onReset={resetLayout}
-        disabled={loading && fleetTiles.length === 0}
-        addingImage={addingImage}
-      />
+        <BoardToolbar
+          zoom={canvas.zoom}
+          onZoomIn={() => canvas.zoomBy(1.2)}
+          onZoomOut={() => canvas.zoomBy(1 / 1.2)}
+          onResetZoom={() => canvas.zoomTo(1)}
+          onJumpToActive={jumpToActive}
+          jumpDisabled={jumpTargets.length === 0}
+          onJumpToAttention={jumpToAttention}
+          attentionCount={attentionSummary.count}
+          attentionCritical={attentionSummary.criticalCount > 0}
+          onAddNote={addNoteAtViewportCenter}
+          onAddImage={addImageAtViewportCenter}
+          onFrameReadable={frameReadable}
+          onReset={resetLayout}
+          disabled={loading && fleetTiles.length === 0}
+          addingImage={addingImage}
+        />
+      </div>
       {persistenceWarning || nodeGraph.error ? (
         <p
           className="board-toast"

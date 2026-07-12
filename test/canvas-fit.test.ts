@@ -12,10 +12,11 @@ const anchor = [160, 100] as const;
 function screenPoint(
   world: { x: number; y: number },
   view: { center: readonly [number, number]; zoom: number },
+  size = viewport,
 ) {
   return {
-    x: (viewport.x / 2 - anchor[0] + world.x - view.center[0]) * view.zoom,
-    y: (viewport.y / 2 - anchor[1] + world.y - view.center[1]) * view.zoom,
+    x: (size.x / 2 - anchor[0] + world.x - view.center[0]) * view.zoom,
+    y: (size.y / 2 - anchor[1] + world.y - view.center[1]) * view.zoom,
   };
 }
 
@@ -49,8 +50,28 @@ test("fit holds a readable zoom floor and leaves oversized boards pannable", () 
 
   expect(view).not.toBeNull();
   expect(view!.zoom).toBe(MIN_READABLE_FIT_ZOOM);
-  const midpoint = screenPoint({ x: 2_000, y: 1_000 }, view!);
-  expect(midpoint.x).toBeCloseTo(640);
-  expect(midpoint.y).toBeCloseTo(380);
+  expect(screenPoint({ x: 0, y: 0 }, view!).x).toBeCloseTo(80);
+  expect(screenPoint({ x: 0, y: 0 }, view!).y).toBeCloseTo(128);
   expect(screenPoint({ x: 4_000, y: 2_000 }, view!).y).toBeGreaterThan(632);
+});
+
+test("readable framing honors responsive header and bottom-rail insets", () => {
+  const narrowViewport = { x: 390, y: 844 };
+  const safeArea = { top: 58, right: 8, bottom: 176, left: 8 };
+  const padding = 16;
+  const view = calculateFitView(
+    [{ x: 0, y: 0, w: 1_000, h: 1_200 }],
+    {
+      viewport: narrowViewport,
+      anchor,
+      padding,
+      safeArea,
+    },
+  );
+
+  expect(view).not.toBeNull();
+  expect(view!.zoom).toBe(MIN_READABLE_FIT_ZOOM);
+  const topLeft = screenPoint({ x: 0, y: 0 }, view!, narrowViewport);
+  expect(topLeft.x).toBeCloseTo(safeArea.left + padding);
+  expect(topLeft.y).toBeCloseTo(safeArea.top + padding);
 });

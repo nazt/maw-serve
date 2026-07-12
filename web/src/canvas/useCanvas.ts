@@ -178,11 +178,17 @@ export function calculateFitView(
   );
   const midpointX = (bounds.minX + bounds.maxX) / 2;
   const midpointY = (bounds.minY + bounds.maxY) / 2;
+  const overflowsX = contentWidth * zoom > safeRight - safeLeft;
+  const overflowsY = contentHeight * zoom > safeBottom - safeTop;
 
   return {
     center: [
-      midpointX + viewport.x / 2 - options.anchor[0] - safeMidpoint.x / zoom,
-      midpointY + viewport.y / 2 - options.anchor[1] - safeMidpoint.y / zoom,
+      overflowsX
+        ? bounds.minX + viewport.x / 2 - options.anchor[0] - safeLeft / zoom
+        : midpointX + viewport.x / 2 - options.anchor[0] - safeMidpoint.x / zoom,
+      overflowsY
+        ? bounds.minY + viewport.y / 2 - options.anchor[1] - safeTop / zoom
+        : midpointY + viewport.y / 2 - options.anchor[1] - safeMidpoint.y / zoom,
     ],
     zoom,
   };
@@ -492,12 +498,26 @@ export function useCanvas(options: UseCanvasOptions = {}): CanvasController {
       const fabric = fabricRef.current;
       const frameWindow = fabric?.ownerDocument.defaultView;
       const viewport = viewportSize(fabric);
+      const safeLeft = Math.min(viewport.x - 1, fitSafeArea.left + fitPadding);
+      const safeTop = Math.min(viewport.y - 1, fitSafeArea.top + fitPadding);
+      const safeRight = Math.max(
+        safeLeft + 1,
+        viewport.x - fitSafeArea.right - fitPadding,
+      );
+      const safeBottom = Math.max(
+        safeTop + 1,
+        viewport.y - fitSafeArea.bottom - fitPadding,
+      );
+      const safeMidpoint = {
+        x: (safeLeft + safeRight) / 2,
+        y: (safeTop + safeBottom) / 2,
+      };
       const width = Math.max(1, rect.w);
       const height = Math.max(1, rect.h);
       const frameZoom = clamp(
         Math.min(
-          Math.max(1, viewport.x - fitPadding * 2) / width,
-          Math.max(1, viewport.y - fitPadding * 2) / height,
+          Math.max(1, safeRight - safeLeft) / width,
+          Math.max(1, safeBottom - safeTop) / height,
         ),
         MIN_CANVAS_ZOOM,
         MAX_CANVAS_ZOOM,
@@ -509,10 +529,16 @@ export function useCanvas(options: UseCanvasOptions = {}): CanvasController {
       );
       const midpointX = rect.x + rect.w / 2;
       const midpointY = rect.y + rect.h / 2;
+      const overflowsX = width * targetZoom > safeRight - safeLeft;
+      const overflowsY = height * targetZoom > safeBottom - safeTop;
       const target: MutableView = {
         center: [
-          midpointX + viewport.x / 2 - anchor[0] - viewport.x / (2 * targetZoom),
-          midpointY + viewport.y / 2 - anchor[1] - viewport.y / (2 * targetZoom),
+          overflowsX
+            ? rect.x + viewport.x / 2 - anchor[0] - safeLeft / targetZoom
+            : midpointX + viewport.x / 2 - anchor[0] - safeMidpoint.x / targetZoom,
+          overflowsY
+            ? rect.y + viewport.y / 2 - anchor[1] - safeTop / targetZoom
+            : midpointY + viewport.y / 2 - anchor[1] - safeMidpoint.y / targetZoom,
         ],
         zoom: targetZoom,
       };
@@ -550,7 +576,7 @@ export function useCanvas(options: UseCanvasOptions = {}): CanvasController {
 
       animationRef.current = frameWindow.requestAnimationFrame(animate);
     },
-    [anchor, cancelFocusAnimation, commitView, fitPadding],
+    [anchor, cancelFocusAnimation, commitView, fitPadding, fitSafeArea],
   );
 
   return useMemo(
