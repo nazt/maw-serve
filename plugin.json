@@ -11,7 +11,7 @@
     "serve": {
       "prefix": "/api/agora",
       "health": "/health",
-      "command": "bun run server.ts"
+      "command": "bun run server-demo.ts"
     }
   },
   "capabilities": ["peer", "tmux:read"]
