@@ -6,6 +6,7 @@ import {
   type CensusPayload,
   type UsagePayload,
 } from "../web/src/fleet/useFleet";
+import { oracleHasConnectAffordance } from "../web/src/fleet/OracleTileContent";
 
 function census(oracles: NonNullable<NonNullable<CensusPayload["displays"]>[number]["spaces"]>[number]["oracles"]): CensusPayload {
   return {
@@ -41,6 +42,8 @@ describe("fleet stale density", () => {
       h: 48,
       data: { density: "compact" },
     });
+    expect(oracleHasConnectAffordance(tiles.find((tile) => tile.id === "live")!)).toBeTrue();
+    expect(oracleHasConnectAffordance(tiles.find((tile) => tile.id === "old-a")!)).toBeFalse();
   });
 
   test("keeps pinned and attention-bearing stale oracles full size", () => {
