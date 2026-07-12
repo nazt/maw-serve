@@ -289,19 +289,20 @@ export default function MirrorPageView({
 
   return (
     <div className="h-dvh w-screen overflow-hidden bg-[var(--bg)] text-[var(--ink)]" data-page-id={pageId} data-mirror-connection={connection}>
-      <header className="fixed left-3 top-3 z-40 flex max-w-[calc(100vw-1.5rem)] items-start gap-2 font-mono">
-        <div className="pointer-events-none shrink-0">
-          <h1 className="text-sm font-bold tracking-tight">STOA · mirror</h1>
-          <p className="max-w-40 truncate text-xs text-[var(--ink-dim)]">{display.name} · {spaces.length} spaces</p>
+      <header className="fixed left-3 top-3 z-40 max-w-[calc(100vw-1.5rem)] font-mono">
+        <div className="flex items-start gap-2">
+          <div className="pointer-events-none w-48 shrink-0">
+            <h1 className="text-sm font-bold tracking-tight">STOA · mirror</h1>
+            <p className="whitespace-normal text-xs leading-snug text-[var(--ink-dim)]">{display.name} · {spaces.length} spaces</p>
+          </div>
+          <PageTabs pages={pages} activePageId={pageId} onSelect={onSelectPage} onCreate={onCreatePage} onRename={onRenamePage} onDelete={onDeletePage} />
         </div>
-        <PageTabs pages={pages} activePageId={pageId} onSelect={onSelectPage} onCreate={onCreatePage} onRename={onRenamePage} onDelete={onDeletePage} />
+        {report.profile.stale ? (
+          <p className="mt-2 w-fit max-w-[min(52rem,calc(100vw-1.5rem))] whitespace-normal rounded-md border border-[var(--pinned)] bg-[var(--surface-2)] px-3 py-1.5 font-mono text-[11px] leading-relaxed text-[var(--pinned)] shadow-[0_0_8px_var(--pinned-glow)]" role="status">
+            {STALE_MESSAGE}
+          </p>
+        ) : null}
       </header>
-
-      {report.profile.stale ? (
-        <p className="fixed bottom-12 left-3 z-40 max-w-[min(46rem,calc(100vw-1.5rem))] rounded-md border border-[var(--pinned)] bg-[var(--surface-2)] px-3 py-1.5 font-mono text-[11px] text-[var(--pinned)] shadow-[0_0_10px_var(--pinned-glow)]" role="status">
-          {STALE_MESSAGE}
-        </p>
-      ) : null}
 
       <Fabric
         id="board-fabric"

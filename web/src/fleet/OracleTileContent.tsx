@@ -32,6 +32,8 @@ export function OracleTileContent({ item, className = "" }: OracleTileContentPro
   const { oracle, status, modelTier, idleSec, annotation, heat, pinned } = item.data;
   const safeHeat = Math.min(100, Math.max(0, Number.isFinite(heat) ? heat : 0));
   const statusColor = STATUS_COLOR[status];
+  const annotationText = annotation || "No annotation";
+  const annotationNeedsDisclosure = annotationText.length > 32;
   const style = {
     "--heat": safeHeat,
     "--node-status": statusColor,
@@ -81,10 +83,12 @@ export function OracleTileContent({ item, className = "" }: OracleTileContentPro
             {idleLabel(idleSec)}
           </span>
           <span
-            className="truncate text-xs leading-snug text-[var(--ink-dim)]"
-            title={annotation}
+            className={`oracle-annotation truncate text-xs leading-snug text-[var(--ink-dim)] ${annotationNeedsDisclosure ? "cursor-help" : ""}`}
+            title={annotationNeedsDisclosure ? annotationText : undefined}
+            tabIndex={annotationNeedsDisclosure ? 0 : undefined}
+            aria-label={annotationNeedsDisclosure ? `Full annotation: ${annotationText}` : undefined}
           >
-            {annotation || "No annotation"}
+            {annotationText}
           </span>
         </div>
       </div>

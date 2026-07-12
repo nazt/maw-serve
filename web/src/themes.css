@@ -6,6 +6,7 @@
   --surface-channels: 0.19 0.02 220;
   --surface-2-channels: 0.23 0.02 220;
   --line-channels: 0.3 0.02 220;
+  --mirror-line-channels: 0.3 0.02 220;
   --note-surface-channels: 0.29 0.055 75;
   --terminal-surface-channels: 0.115 0.018 220;
   --terminal-header-channels: 0.17 0.02 220;
@@ -56,6 +57,7 @@
   --surface-channels: 0.165 0.035 165;
   --surface-2-channels: 0.215 0.045 160;
   --line-channels: 0.5 0.13 155;
+  --mirror-line-channels: 0.34 0.04 160;
   --note-surface-channels: 0.285 0.07 75;
   --terminal-surface-channels: 0.09 0.025 165;
   --terminal-header-channels: 0.14 0.04 165;
@@ -111,6 +113,7 @@
   --surface: oklch(var(--surface-channels));
   --surface-2: oklch(var(--surface-2-channels));
   --line: oklch(var(--line-channels));
+  --mirror-line: oklch(var(--mirror-line-channels));
   --note-surface: oklch(var(--note-surface-channels));
   --terminal-surface: oklch(var(--terminal-surface-channels));
   --terminal-header: oklch(var(--terminal-header-channels));
