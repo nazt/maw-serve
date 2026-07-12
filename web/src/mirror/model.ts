@@ -173,6 +173,38 @@ export function displayPageId(display: Pick<MirrorDisplay, "index" | "name">): s
   return `display-${display.index}-${slug}`;
 }
 
+export function spacePageId(
+  display: Pick<MirrorDisplay, "index">,
+  space: Pick<MirrorSpace, "index">,
+): string {
+  return `space-${display.index}-${space.index}`;
+}
+
+export function parseSpacePageId(pageId: string): {
+  displayIndex: number;
+  spaceIndex: number;
+} | null {
+  const match = /^space-(-?\d+)-(-?\d+)$/.exec(pageId);
+  if (!match) return null;
+  const displayIndex = Number(match[1]);
+  const spaceIndex = Number(match[2]);
+  return Number.isInteger(displayIndex) && Number.isInteger(spaceIndex)
+    ? { displayIndex, spaceIndex }
+    : null;
+}
+
+export function windowGeometry(
+  rect: NormRect,
+  display: Pick<MirrorDisplay, "frame">,
+): Rect {
+  return {
+    x: rect.x * display.frame.w,
+    y: rect.y * display.frame.h,
+    w: rect.w * display.frame.w,
+    h: rect.h * display.frame.h,
+  };
+}
+
 export function clampNormRect(rect: NormRect): NormRect {
   const x = Math.min(1, Math.max(0, rect.x));
   const y = Math.min(1, Math.max(0, rect.y));

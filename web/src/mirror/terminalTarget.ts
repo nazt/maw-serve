@@ -51,3 +51,51 @@ export function terminalTarget(
 ): CensusOracle | null {
   return terminalTargets(census, oracle)[0] ?? null;
 }
+
+export interface TerminalBudgetCandidate {
+  paneKey: string;
+  focus: boolean;
+  pulseLive: boolean;
+  status: string | null | undefined;
+  idleSec: number | null | undefined;
+}
+
+export interface TerminalBudget {
+  streamPaneKeys: ReadonlySet<string>;
+  degradedPaneKeys: string[];
+}
+
+export function allocateTerminalBudget(
+  candidates: readonly TerminalBudgetCandidate[],
+  limit = 8,
+): TerminalBudget {
+  const distinct = new Map<string, TerminalBudgetCandidate>();
+  for (const candidate of candidates) {
+    const existing = distinct.get(candidate.paneKey);
+    if (!existing) {
+      distinct.set(candidate.paneKey, candidate);
+      continue;
+    }
+    const preferred = [candidate, existing].sort(compareTerminalPriority)[0];
+    distinct.set(candidate.paneKey, preferred);
+  }
+
+  const ranked = [...distinct.values()].sort(compareTerminalPriority);
+  const streamCount = Math.max(0, Math.floor(limit));
+  return {
+    streamPaneKeys: new Set(ranked.slice(0, streamCount).map((row) => row.paneKey)),
+    degradedPaneKeys: ranked.slice(streamCount).map((row) => row.paneKey),
+  };
+}
+
+function compareTerminalPriority(
+  left: TerminalBudgetCandidate,
+  right: TerminalBudgetCandidate,
+): number {
+  return Number(right.focus) - Number(left.focus) ||
+    Number(right.pulseLive) - Number(left.pulseLive) ||
+    Number(String(right.status).toLowerCase() === "active") -
+      Number(String(left.status).toLowerCase() === "active") ||
+    finiteIdleSeconds(left.idleSec) - finiteIdleSeconds(right.idleSec) ||
+    left.paneKey.localeCompare(right.paneKey);
+}

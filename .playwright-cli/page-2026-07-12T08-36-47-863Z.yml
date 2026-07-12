@@ -1,0 +1,69 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic:
+      - heading "STOA · board" [level=1]
+      - time: 07/12/2026, 15:36:47
+    - navigation "Board pages" [ref=e5]:
+      - tablist "Board pages" [ref=e6]:
+        - generic [ref=e7]:
+          - tab "fleet" [ref=e8] [cursor=pointer]
+          - link "Open fleet board page in a new browser tab" [ref=e9] [cursor=pointer]:
+            - /url: /api/agora/?host=http://127.0.0.1:48957#/b/fleet
+            - text: ↗
+          - button "Delete fleet board page" [ref=e10] [cursor=pointer]: ×
+        - generic [ref=e11]:
+          - tab "display" [selected] [ref=e12] [cursor=pointer]: ▣display
+          - link "Open display board page in a new browser tab" [ref=e13] [cursor=pointer]:
+            - /url: /api/agora/?host=http://127.0.0.1:48957#/b/display-2-dell-u2723qe
+            - text: ↗
+      - button "Create board page" [ref=e14] [cursor=pointer]: +
+  - generic "Interactive fleet board" [ref=e15]:
+    - status: Acquiring fleet telemetry…
+  - status [ref=e16]:
+    - generic [ref=e17]: double-click an oracle for its live terminal · drag to arrange · Add note/image
+    - button "Dismiss board hint" [ref=e18] [cursor=pointer]: ×
+  - complementary "Oracle status legend":
+    - generic:
+      - generic: active
+    - generic:
+      - generic: idle
+    - generic:
+      - generic: stale
+    - generic:
+      - generic: pinned
+  - toolbar "Board controls" [ref=e19]:
+    - button "Jump to active J" [disabled] [ref=e20]:
+      - generic [ref=e21]: Jump to active
+      - generic [ref=e22]: J
+    - button "0 oracles need attention. Cycle attention targets with A." [disabled] [ref=e23]:
+      - generic [ref=e24]: ⚠ 0 need attention
+      - generic [ref=e25]: A
+    - button "Add note" [disabled] [ref=e26]
+    - button "Add image" [disabled] [ref=e27]
+    - button "Fit all" [disabled] [ref=e28]
+    - button "Reset layout" [ref=e29] [cursor=pointer]
+    - group "Canvas zoom" [ref=e30]:
+      - button "Zoom out" [ref=e31] [cursor=pointer]: −
+      - button "Reset canvas zoom to 100%. Current zoom 100%" [ref=e32] [cursor=pointer]: 100%
+      - button "Zoom in" [ref=e33] [cursor=pointer]: +
+  - 'contentinfo "Fleet status: 0 active, 0 idle, 0 stale, 0 tokens per hour, 0 accounts" [ref=e34]':
+    - generic [ref=e35]:
+      - generic [ref=e36]:
+        - strong [ref=e37]: "0"
+        - generic [ref=e38]: active
+      - generic [ref=e39]:
+        - strong [ref=e40]: "0"
+        - generic [ref=e41]: idle
+      - generic [ref=e42]:
+        - strong [ref=e43]: "0"
+        - generic [ref=e44]: stale
+      - generic [ref=e46]:
+        - strong [ref=e47]: "0"
+        - generic [ref=e48]: tok/h
+      - generic [ref=e49]:
+        - strong [ref=e50]: "0"
+        - generic [ref=e51]: accounts
+    - button "Switch to phosphor mode" [ref=e52] [cursor=pointer]:
+      - generic [ref=e54]: plain
+    - generic "Build dev @ dev · stoa-topo · data http://127.0.0.1:48957" [ref=e55]: dev @ dev · stoa-topo · data http://127.0.0.1:48957
+  - status [ref=e56]: 0 fleet tiles

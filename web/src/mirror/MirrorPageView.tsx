@@ -37,6 +37,7 @@ interface MirrorPageViewProps {
   onCreatePage: () => void;
   onRenamePage: (pageId: string, name: string) => void;
   onDeletePage: (pageId: string) => void;
+  onExpandSpace: (displayIndex: number, spaceIndex: number) => void;
   theme: Theme;
   onToggleTheme: () => void;
 }
@@ -68,6 +69,7 @@ export default function MirrorPageView({
   onCreatePage,
   onRenamePage,
   onDeletePage,
+  onExpandSpace,
   theme,
   onToggleTheme,
 }: MirrorPageViewProps) {
@@ -344,6 +346,7 @@ export default function MirrorPageView({
                 statusByOracle={statusByOracle}
                 modelByOracle={modelByOracle}
                 onOracleDoubleClick={(oracle) => openTerminal(oracle, item)}
+                onExpand={() => onExpandSpace(display.index, item.data.space.index)}
               />
             ) : (
               <TerminalTile

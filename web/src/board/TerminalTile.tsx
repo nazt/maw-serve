@@ -28,14 +28,16 @@ export interface TerminalTileItem {
     oracle: string;
     session: string;
     window: string;
+    model?: string;
   };
 }
 
 export interface TerminalTileProps {
   item: TerminalTileItem;
-  onClose: (id: string) => void;
+  onClose?: (id: string) => void;
   theme: Theme;
   pollIntervalMs?: number;
+  mode?: "stream" | "poll";
 }
 
 type ConnectionStatus = "connecting" | "live" | "reconnecting" | "polling" | "error";
@@ -64,6 +66,10 @@ function saveTerminalZoom(itemId: string, zoomFactor: number): void {
   }
 }
 
+export const CAPTURE_CACHE_MS = 2_000;
+
+const captureCache = new Map<string, { at: number; promise: Promise<string> }>();
+
 function captureText(payload: unknown): string {
   if (typeof payload === "string") return payload;
   if (Array.isArray(payload)) return payload.map(captureText).join("\n");
@@ -84,6 +90,22 @@ async function readCapture(response: Response): Promise<string> {
   if (contentType.includes("json")) return captureText(await response.json());
   if (contentType.includes("text/html")) throw new Error("Capture endpoint is unavailable");
   return response.text();
+}
+
+function cachedCapture(url: string): Promise<string> {
+  const now = Date.now();
+  const existing = captureCache.get(url);
+  if (existing && now - existing.at < CAPTURE_CACHE_MS) return existing.promise;
+
+  const promise = apiFetch(url, {
+    cache: "no-store",
+    headers: { Accept: "application/json, text/plain;q=0.9" },
+  }).then(readCapture).catch((reason) => {
+    captureCache.delete(url);
+    throw reason;
+  });
+  captureCache.set(url, { at: now, promise });
+  return promise;
 }
 
 function statusLabel(status: ConnectionStatus): string {
@@ -147,6 +169,7 @@ export function TerminalTile({
   onClose,
   theme,
   pollIntervalMs = 2_000,
+  mode = "stream",
 }: TerminalTileProps) {
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
   const [error, setError] = useState<string | null>(null);
@@ -205,7 +228,6 @@ export function TerminalTile({
     let receivedStreamFrame = false;
     let pollingStarted = false;
     let pollTimer: number | null = null;
-    let pollController: AbortController | null = null;
     let writeFrame: number | null = null;
     let following = true;
     let pausedSnapshot: string | null = null;
@@ -374,20 +396,13 @@ export function TerminalTile({
     });
 
     const poll = () => {
-      pollController?.abort();
-      const controller = new AbortController();
-      pollController = controller;
-
-      void apiFetch(apiUrlWithParams(API_ENDPOINTS.capture, captureParams()), {
-        signal: controller.signal,
-        cache: "no-store",
-        headers: { Accept: "application/json, text/plain;q=0.9" },
-      }).then(readCapture).then((text) => {
-        if (disposed || controller.signal.aborted) return;
+      const url = apiUrlWithParams(API_ENDPOINTS.capture, captureParams());
+      void cachedCapture(url).then((text) => {
+        if (disposed) return;
         queueWrite(text || "(empty pane)", true);
         updateStatus("polling");
       }).catch((reason: unknown) => {
-        if (disposed || controller.signal.aborted) return;
+        if (disposed) return;
         updateStatus("error", reason instanceof Error ? reason.message : String(reason));
       });
     };
@@ -437,13 +452,13 @@ export function TerminalTile({
       };
     };
 
-    startStream();
+    if (mode === "poll") startPolling();
+    else startStream();
 
     return () => {
       disposed = true;
       eventSource?.close();
       if (pollTimer !== null) window.clearInterval(pollTimer);
-      pollController?.abort();
       window.cancelAnimationFrame(fitFrame);
       if (writeFrame !== null) window.cancelAnimationFrame(writeFrame);
       resizeObserver.disconnect();
@@ -454,7 +469,7 @@ export function TerminalTile({
       if (terminalRef.current === terminal) terminalRef.current = null;
       terminal.dispose();
     };
-  }, [item.data.session, item.data.window, pollIntervalMs]);
+  }, [item.data.session, item.data.window, mode, pollIntervalMs]);
 
   useEffect(() => {
     zoomFactorRef.current = zoomFactor;
@@ -472,12 +487,18 @@ export function TerminalTile({
         selectMode ? "ring-1 ring-inset ring-[var(--idle)]" : ""
       }`}
       data-terminal-select-mode={selectMode ? "select" : "view"}
+      data-terminal-mode={mode}
     >
       <header className="flex h-9 shrink-0 items-center gap-2 border-b border-[var(--line)] bg-[var(--terminal-header)] px-2.5 font-mono">
         <span className={`h-1.5 w-1.5 rounded-full ${statusDot(status)}`} aria-hidden="true" />
         <strong className="min-w-0 flex-1 truncate text-xs text-[var(--ink)]">
           {item.data.oracle}
         </strong>
+        {item.data.model ? (
+          <span className="shrink-0 rounded-sm bg-[var(--surface-2)] px-1 py-0.5 text-[9px] text-[var(--ink-dim)]">
+            {item.data.model}
+          </span>
+        ) : null}
         <span className="max-w-[45%] truncate text-[10px] text-[var(--ink-dim)]">
           {item.data.session}:{item.data.window}
         </span>
@@ -540,15 +561,17 @@ export function TerminalTile({
         >
           <span aria-hidden="true">⌶</span>
         </button>
-        <button
-          type="button"
-          className="grid h-6 w-6 shrink-0 place-items-center rounded text-base leading-none text-[var(--ink-dim)] transition-colors duration-150 hover:bg-[var(--surface-2)] hover:text-[var(--ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--idle)]"
-          aria-label={`Close ${item.data.oracle} terminal`}
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={() => onClose(item.id)}
-        >
-          ×
-        </button>
+        {onClose ? (
+          <button
+            type="button"
+            className="grid h-6 w-6 shrink-0 place-items-center rounded text-base leading-none text-[var(--ink-dim)] transition-colors duration-150 hover:bg-[var(--surface-2)] hover:text-[var(--ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--idle)]"
+            aria-label={`Close ${item.data.oracle} terminal`}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={() => onClose(item.id)}
+          >
+            ×
+          </button>
+        ) : null}
       </header>
 
       <div

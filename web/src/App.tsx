@@ -42,13 +42,17 @@ import {
 import PageTabs from "./board/PageTabs";
 import {
   BOARD_PAGES_STORAGE_KEY,
+  SPACE_PAGES_STORAGE_KEY,
   boardPageHref,
   createBoardPage,
   loadBoardPages,
+  loadOpenSpacePages,
   pageIdFromHash,
   saveBoardPages,
+  saveOpenSpacePages,
   useHashPage,
   type BoardPage,
+  type OpenSpacePage,
 } from "./board/pages";
 import TerminalTile, {
   type TerminalTileItem,
@@ -68,7 +72,12 @@ import {
 } from "./fleet/useFleet";
 import Tile from "./tiles/Tile";
 import MirrorPageView from "./mirror/MirrorPageView";
-import { displayPageId } from "./mirror/model";
+import SpacePageView from "./mirror/SpacePageView";
+import {
+  displayPageId,
+  parseSpacePageId,
+  spacePageId,
+} from "./mirror/model";
 import { useMirrorOracleModels, useMirrorReport, useOraclePulse } from "./mirror/useMirror";
 
 type AppTileItem = FleetTileItem | TerminalTileItem;
@@ -101,6 +110,17 @@ const ORACLE_BASE_Z = 1;
 const ORACLE_ATTENTION_Z = 6;
 const ORACLE_FRONT_Z = 9;
 const USER_ITEM_MIN_Z = 10;
+
+function initialOpenSpacePages(): OpenSpacePage[] {
+  const saved = loadOpenSpacePages();
+  if (typeof window === "undefined") return saved;
+  const requestedId = pageIdFromHash(window.location.hash);
+  const requested = requestedId ? parseSpacePageId(requestedId) : null;
+  if (!requested || saved.some((page) => (
+    page.displayIndex === requested.displayIndex && page.spaceIndex === requested.spaceIndex
+  ))) return saved;
+  return [...saved, requested];
+}
 
 const STATUS_LEGEND = [
   ["active", "active"],
@@ -1589,6 +1609,7 @@ function BoardPageView({
 export default function App() {
   const { theme, toggleTheme } = useTheme();
   const [manualPages, setManualPages] = useState(loadBoardPages);
+  const [openSpacePages, setOpenSpacePages] = useState(initialOpenSpacePages);
   const mirror = useMirrorReport();
   const pulse = useOraclePulse();
   const mirrorModels = useMirrorOracleModels();
@@ -1606,14 +1627,21 @@ export default function App() {
       ? { id: requested, name: "display", system: "display" }
       : null;
   }, [mirror.report]);
+  const spacePages = useMemo<BoardPage[]>(() => openSpacePages.map((open) => ({
+    id: spacePageId({ index: open.displayIndex }, { index: open.spaceIndex }),
+    name: `space ${open.spaceIndex}`,
+    system: "space" as const,
+    displayIndex: open.displayIndex,
+    spaceIndex: open.spaceIndex,
+  })), [openSpacePages]);
   const pages = useMemo(() => {
     const manualIds = new Set(manualPages.map((page) => page.id));
-    const auto = [...displayPages];
+    const auto = [...displayPages, ...spacePages];
     if (pendingDisplayPage && !auto.some((page) => page.id === pendingDisplayPage.id)) {
       auto.push(pendingDisplayPage);
     }
     return [...manualPages, ...auto.filter((page) => !manualIds.has(page.id))];
-  }, [displayPages, manualPages, pendingDisplayPage]);
+  }, [displayPages, manualPages, pendingDisplayPage, spacePages]);
   const { pageId, navigate } = useHashPage(pages);
   const oracleDisplayPages = useMemo(() => {
     const byDisplay = new Map((mirror.report?.displays ?? []).map((display) => [
@@ -1627,14 +1655,22 @@ export default function App() {
   }, [mirror.report]);
 
   useEffect(() => saveBoardPages(manualPages), [manualPages]);
+  useEffect(() => saveOpenSpacePages(openSpacePages), [openSpacePages]);
 
   useEffect(() => {
     const syncPages = (event: StorageEvent) => {
-      if (event.key !== BOARD_PAGES_STORAGE_KEY) return;
-      const next = loadBoardPages();
-      setManualPages((current) => (
-        JSON.stringify(current) === JSON.stringify(next) ? current : next
-      ));
+      if (event.key === BOARD_PAGES_STORAGE_KEY) {
+        const next = loadBoardPages();
+        setManualPages((current) => (
+          JSON.stringify(current) === JSON.stringify(next) ? current : next
+        ));
+      }
+      if (event.key === SPACE_PAGES_STORAGE_KEY) {
+        const next = loadOpenSpacePages();
+        setOpenSpacePages((current) => (
+          JSON.stringify(current) === JSON.stringify(next) ? current : next
+        ));
+      }
     };
     window.addEventListener("storage", syncPages);
     return () => window.removeEventListener("storage", syncPages);
@@ -1649,11 +1685,19 @@ export default function App() {
   const renamePage = useCallback((targetPageId: string, name: string) => {
     const nextName = name.trim().slice(0, 40);
     if (!nextName) return;
-    if (displayPages.some((page) => page.id === targetPageId)) return;
+    if (pages.some((page) => page.id === targetPageId && page.system)) return;
     setManualPages((current) => current.map((page) => (
       page.id === targetPageId ? { ...page, name: nextName } : page
     )));
-  }, []);
+  }, [pages]);
+
+  const expandSpace = useCallback((displayIndex: number, spaceIndex: number) => {
+    const id = spacePageId({ index: displayIndex }, { index: spaceIndex });
+    setOpenSpacePages((current) => current.some((page) => (
+      page.displayIndex === displayIndex && page.spaceIndex === spaceIndex
+    )) ? current : [...current, { displayIndex, spaceIndex }]);
+    window.setTimeout(() => navigate(id), 0);
+  }, [navigate]);
 
   const deletePage = useCallback((targetPageId: string) => {
     if (pages.length <= 1) return;
@@ -1662,7 +1706,7 @@ export default function App() {
     if (page.system === "display") {
       return;
     }
-    if (!window.confirm(`Delete board page “${page.name}”?`)) return;
+    if (!page.system && !window.confirm(`Delete board page “${page.name}”?`)) return;
 
     const targetIndex = pages.findIndex((candidate) => candidate.id === targetPageId);
     const remaining = pages.filter((candidate) => candidate.id !== targetPageId);
@@ -1670,7 +1714,13 @@ export default function App() {
       const fallback = remaining[Math.min(targetIndex, remaining.length - 1)];
       navigate(fallback.id);
     }
-    setManualPages((current) => current.filter((candidate) => candidate.id !== targetPageId));
+    if (page.system === "space") {
+      setOpenSpacePages((current) => current.filter((candidate) => (
+        spacePageId({ index: candidate.displayIndex }, { index: candidate.spaceIndex }) !== targetPageId
+      )));
+    } else {
+      setManualPages((current) => current.filter((candidate) => candidate.id !== targetPageId));
+    }
     window.setTimeout(() => clearBoardState(targetPageId), 0);
   }, [navigate, pageId, pages]);
 
@@ -1701,6 +1751,15 @@ export default function App() {
   const activeDisplay = mirror.report?.displays.find(
     (display) => displayPageId(display) === pageId,
   );
+  const activePage = pages.find((page) => page.id === pageId);
+  const activeSpaceDisplay = activePage?.system === "space"
+    ? mirror.report?.displays.find((display) => display.index === activePage.displayIndex) ?? null
+    : null;
+  const activeSpace = activePage?.system === "space"
+    ? mirror.report?.spaces.find((space) => (
+      space.display === activePage.displayIndex && space.index === activePage.spaceIndex
+    )) ?? null
+    : null;
 
   if (activeDisplay && mirror.report) {
     return (
@@ -1708,6 +1767,33 @@ export default function App() {
         key={pageId}
         pageId={pageId}
         display={activeDisplay}
+        report={mirror.report}
+        connection={mirror.connection}
+        mirrorError={mirror.error}
+        argusConnected={pulse.connected}
+        pulses={pulse.pulses}
+        modelByOracle={mirrorModels}
+        pages={pages}
+        onSelectPage={navigate}
+        onCreatePage={createPage}
+        onRenamePage={renamePage}
+        onDeletePage={deletePage}
+        onExpandSpace={expandSpace}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+      />
+    );
+  }
+
+  if (activePage?.system === "space") {
+    return (
+      <SpacePageView
+        key={pageId}
+        pageId={pageId}
+        displayIndex={activePage.displayIndex ?? -1}
+        spaceIndex={activePage.spaceIndex ?? -1}
+        display={activeSpaceDisplay}
+        space={activeSpace}
         report={mirror.report}
         connection={mirror.connection}
         mirrorError={mirror.error}

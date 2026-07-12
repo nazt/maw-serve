@@ -1,6 +1,6 @@
 {
-  "branch": "agents/stoa-term-zoom",
-  "commit": "d75697e",
-  "builder": "stoa-term-zoom",
-  "buildTime": "2026-07-12T08:29:52.799Z"
+  "branch": "agents/stoa-space-expand",
+  "commit": "05eda68",
+  "builder": "stoa-topo",
+  "buildTime": "2026-07-12T08:35:32.973Z"
 }

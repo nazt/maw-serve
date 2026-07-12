@@ -6,12 +6,16 @@ import {
   fitDisplayFrame,
   layoutWindows,
   parsePulseRows,
+  parseSpacePageId,
   pulseFreshness,
   sanitizeSpaceReport,
+  spacePageId,
+  windowGeometry,
 } from "../web/src/mirror/model";
 import { decodeSpacesFrame } from "../web/src/mirror/useMirror";
 import { normalizeOracleHandle } from "../web/src/fleet/useFleet";
 import {
+  allocateTerminalBudget,
   terminalPaneKey,
   terminalTarget,
   terminalTargets,
@@ -80,6 +84,16 @@ test("display page ids and default space grid are stable and row-major", () => {
   ))).toBe(true);
 });
 
+test("space page ids round-trip and normalized windows recover display-local geometry", () => {
+  expect(spacePageId({ index: 3 }, { index: 7 })).toBe("space-3-7");
+  expect(parseSpacePageId("space-3-7")).toEqual({ displayIndex: 3, spaceIndex: 7 });
+  expect(parseSpacePageId("space-private")).toBeNull();
+  expect(windowGeometry(
+    { x: 0.25, y: 0.1, w: 0.5, h: 0.4 },
+    { frame: { x: -2560, y: 0, w: 2560, h: 1440 } },
+  )).toEqual({ x: 640, y: 144, w: 1280, h: 576 });
+});
+
 test("Argus pulse parsing filters probes and applies freshness windows", () => {
   const now = 2_000_000_000_000;
   const rows = parsePulseRows([
@@ -117,4 +131,21 @@ test("terminal targets prefer active panes, then least idle, without changing id
     "idle",
   ]);
   expect(terminalPaneKey(terminalTarget(census, "Agora Oracle")!)).toBe("s:live");
+});
+
+test("space terminal budget counts distinct panes and preserves duplicate-window streams", () => {
+  const rows = Array.from({ length: 10 }, (_, index) => ({
+    paneKey: `s:${index}`,
+    focus: index === 9,
+    pulseLive: index === 8,
+    status: index < 2 ? "active" : "idle",
+    idleSec: index,
+  }));
+  rows.push({ ...rows[9] });
+
+  const budget = allocateTerminalBudget(rows, 8);
+  expect(budget.streamPaneKeys.size).toBe(8);
+  expect(budget.streamPaneKeys.has("s:9")).toBe(true);
+  expect(budget.streamPaneKeys.has("s:8")).toBe(true);
+  expect(budget.degradedPaneKeys).toHaveLength(2);
 });
