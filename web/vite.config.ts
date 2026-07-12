@@ -43,7 +43,7 @@ export default defineConfig(({ command }) => {
     },
     build: {
       outDir: "../public",
-      emptyOutDir: false,
+      emptyOutDir: true,
     },
   };
 });

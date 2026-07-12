@@ -16,3 +16,9 @@
 - Vite development and preview servers must set the assigned port with `strictPort: true`; never silently select another port.
 - Every test report includes the exact feature-demo URL so reviewers can identify the build they opened.
 - Every page must expose build identity in the StatusBar, and scripts must be able to read the same identity from `GET /api/agora/version`.
+
+## Deploy artifact
+
+- `public/` is a build artifact kept on `main` as the deploy artifact.
+- On a rebase or merge conflict in `public/`, **never hand-merge**. Take yours and regenerate it with `cd web && bun run build`.
+- Verification builds happen from `main` at `:48900` only.
