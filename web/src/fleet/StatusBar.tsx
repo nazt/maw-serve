@@ -57,14 +57,13 @@ export function summarizeFleet(items: FleetTileItem[], usage: UsagePayload | nul
 interface MetricProps {
   label: string;
   value: string | number;
-  color?: string;
 }
 
-function Metric({ label, value, color = "var(--ink-dim)" }: MetricProps) {
+function Metric({ label, value }: MetricProps) {
   return (
-    <span className="inline-flex items-baseline gap-1 whitespace-nowrap" style={{ color }}>
-      <strong className="font-mono text-xs font-bold tabular-nums text-current">{value}</strong>
-      <span className="text-[11px] text-current">{label}</span>
+    <span className="inline-flex items-baseline gap-1 whitespace-nowrap">
+      <strong className="font-mono text-xs font-bold tabular-nums text-[var(--ink)]">{value}</strong>
+      <span className="text-[11px] text-[var(--ink-dim)]">{label}</span>
     </span>
   );
 }
@@ -110,14 +109,14 @@ export function StatusBar({ items, usage, error = null, className = "" }: Status
     >
       <div className="flex min-w-0 flex-1 items-center gap-4 overflow-hidden">
         {error ? (
-          <span className="truncate font-mono text-xs text-[var(--error)]">
+          <span className="truncate font-mono text-xs text-[var(--ink)]">
             telemetry interrupted · retrying
           </span>
         ) : (
           <>
-            <Metric label="active" value={summary.active} color="var(--active)" />
-            <Metric label="idle" value={summary.idle} color="var(--idle)" />
-            <Metric label="stale" value={summary.stale} color="var(--stale)" />
+            <Metric label="active" value={summary.active} />
+            <Metric label="idle" value={summary.idle} />
+            <Metric label="stale" value={summary.stale} />
             <span className="h-3 w-px bg-[var(--line)]" aria-hidden="true" />
             <Metric label="tok/h" value={compactNumber.format(summary.burnPerHour)} />
             <Metric
@@ -128,7 +127,7 @@ export function StatusBar({ items, usage, error = null, className = "" }: Status
         )}
       </div>
       <span
-        className="max-w-[48vw] shrink-0 truncate rounded border border-[var(--line)] px-1.5 py-0.5 font-mono text-[11px] leading-none tabular-nums text-[var(--ink-dim)]"
+        className="max-w-[48vw] shrink-0 truncate rounded border border-[var(--line)] px-1.5 py-0.5 font-mono text-[11px] leading-none tabular-nums text-[var(--ink-faint)]"
         title={`${buildLabel} · UI built ${__STOA_BUILD__.buildTime}${serverBuild ? ` · data built ${serverBuild.buildTime}` : ""}`}
         aria-label={`Build ${buildLabel}`}
       >

@@ -109,7 +109,7 @@ export default function PageTabs({
                 </a>
               )}
               <a
-                className="ml-0.5 text-[10px] text-[var(--ink-dim)] opacity-0 transition-opacity hover:text-[var(--idle)] focus:opacity-100 focus:outline-none group-hover:opacity-100"
+                className="ml-0.5 text-[10px] text-[var(--ink-dim)] opacity-0 transition-opacity hover:text-[var(--ink)] focus:opacity-100 focus:outline-none group-hover:opacity-100"
                 href={boardPageHref(page.id)}
                 target="_blank"
                 rel="noopener noreferrer"
@@ -121,7 +121,7 @@ export default function PageTabs({
               {pages.length > 1 ? (
                 <button
                   type="button"
-                  className="ml-0.5 text-[11px] text-[var(--ink-dim)] opacity-0 transition-opacity hover:text-[var(--error)] focus:opacity-100 focus:outline-none group-hover:opacity-100"
+                  className="ml-0.5 text-[11px] text-[var(--ink-dim)] opacity-0 transition-opacity hover:text-[var(--ink)] focus:opacity-100 focus:outline-none group-hover:opacity-100"
                   aria-label={`Delete ${page.name} board page`}
                   title="Delete page"
                   onClick={() => onDelete(page.id)}
@@ -135,7 +135,7 @@ export default function PageTabs({
       </div>
       <button
         type="button"
-        className="shrink-0 px-1 py-0.5 text-xs text-[var(--ink-dim)] hover:text-[var(--idle)] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-[var(--idle)]"
+        className="shrink-0 px-1 py-0.5 text-xs text-[var(--ink-dim)] hover:text-[var(--ink)] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-[var(--idle)]"
         aria-label="Create board page"
         title="New board page"
         onClick={onCreate}

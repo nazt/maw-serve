@@ -73,7 +73,7 @@ function fleetTerminalTheme(): ITheme {
 
   const theme: ITheme = {
     background: "#00000000",
-    foreground: color("oklch(0.86 0.08 155)", "#a9e4bd"),
+    foreground: color("var(--ink-dim)", "#b8b8b8"),
     cursor: color("var(--active)", "#75d99a"),
     cursorAccent: color("var(--bg)", "#122126"),
     selectionBackground: color("oklch(var(--idle-channels) / 0.24)", "#39705d99"),
@@ -84,7 +84,7 @@ function fleetTerminalTheme(): ITheme {
     blue: color("var(--idle)", "#78b7cc"),
     magenta: color("oklch(0.72 0.13 315)", "#bd92ca"),
     cyan: color("oklch(0.79 0.11 195)", "#75ced0"),
-    white: color("var(--ink-dim)", "#d8e3e7"),
+    white: color("var(--ink-dim)", "#b8b8b8"),
     brightBlack: color("var(--stale)", "#60737a"),
     brightRed: color("oklch(0.78 0.17 25)", "#ff8b86"),
     brightGreen: color("oklch(0.91 0.15 155)", "#9af0b6"),
@@ -92,7 +92,7 @@ function fleetTerminalTheme(): ITheme {
     brightBlue: color("oklch(0.86 0.1 210)", "#9ed7e8"),
     brightMagenta: color("oklch(0.82 0.12 315)", "#d7afe2"),
     brightCyan: color("oklch(0.88 0.1 195)", "#9ce8e8"),
-    brightWhite: color("var(--ink)", "#f1f7f8"),
+    brightWhite: color("var(--ink)", "#f4f4f4"),
   };
   probe.remove();
   return theme;
@@ -100,13 +100,6 @@ function fleetTerminalTheme(): ITheme {
 
 function lineCount(text: string): number {
   return text.split("\n").length - 1;
-}
-
-function statusColor(status: ConnectionStatus): string {
-  if (status === "live") return "text-[var(--active)]";
-  if (status === "reconnecting") return "text-[var(--pinned)]";
-  if (status === "error") return "text-[var(--error)]";
-  return "text-[var(--ink-dim)]";
 }
 
 function statusDot(status: ConnectionStatus): string {
@@ -368,7 +361,7 @@ export function TerminalTile({
         {newLineCount > 0 ? (
           <button
             type="button"
-            className="absolute bottom-2 right-3 rounded-full bg-[var(--idle)] px-2 py-1 font-mono text-[9px] font-bold text-[var(--bg)] shadow-[0_0_0_1px_var(--bg)] transition-colors duration-150 hover:bg-[var(--active)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--ink)]"
+            className="absolute bottom-2 right-3 rounded-full bg-[var(--idle)] px-2 py-1 font-mono text-[9px] font-bold text-[var(--ink-inverse)] shadow-[0_0_0_1px_var(--bg)] transition-colors duration-150 hover:bg-[var(--active)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--ink)]"
             onPointerDown={(event) => event.stopPropagation()}
             onClick={resumeFollowRef.current}
           >
@@ -378,7 +371,7 @@ export function TerminalTile({
       </div>
 
       <footer
-        className={`shrink-0 border-t border-[var(--line)] px-2.5 py-1 font-mono text-[9px] tabular-nums ${statusColor(status)}`}
+        className="shrink-0 border-t border-[var(--line)] px-2.5 py-1 font-mono text-[9px] tabular-nums text-[var(--ink-dim)]"
         aria-live="polite"
         title={error ?? undefined}
       >

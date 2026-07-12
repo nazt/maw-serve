@@ -193,7 +193,7 @@ function NoteTileContent({ item, onChange }: NoteTileContentProps) {
   return (
     <div className="h-full rounded-md border border-[var(--pinned)] bg-[oklch(0.29_0.055_75)] p-2.5 shadow-[0_0_8px_var(--pinned-glow)]">
       <textarea
-        className="h-full w-full resize-none border-0 bg-transparent font-mono text-sm leading-relaxed text-[oklch(0.96_0.025_75)] outline-none placeholder:text-[oklch(0.79_0.045_75)]"
+        className="h-full w-full resize-none border-0 bg-transparent font-mono text-sm leading-relaxed text-[var(--ink)] outline-none placeholder:text-[var(--ink-faint)]"
         aria-label="Board note"
         placeholder="Write a board note…"
         value={item.data.text}
@@ -309,15 +309,15 @@ function BoardToolbar({
         title="Cycle recently active oracles (J)"
       >
         <span>Jump to active</span>
-        <kbd className="font-mono text-[10px] font-medium text-[var(--idle)]">J</kbd>
+        <kbd className="font-mono text-[10px] font-medium text-[var(--ink-dim)]">J</kbd>
       </button>
       <button
         type="button"
         className={`${toolbarButtonClass} flex items-center gap-1.5 ${
           attentionCritical
-            ? "border-[var(--error)] text-[var(--error)]"
+            ? "border-[var(--error)] text-[var(--ink)]"
             : attentionCount > 0
-              ? "border-[var(--pinned)] text-[var(--pinned)]"
+              ? "border-[var(--pinned)] text-[var(--ink)]"
               : "text-[var(--ink-dim)]"
         }`}
         onClick={onJumpToAttention}
@@ -381,7 +381,7 @@ function BoardToolbar({
         </button>
         <button
           type="button"
-          className="min-h-7 min-w-12 border-x border-[var(--line)] px-1 font-mono text-xs tabular-nums text-[var(--idle)] transition-colors duration-150 hover:bg-[var(--surface-2)] focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--idle)]"
+          className="min-h-7 min-w-12 border-x border-[var(--line)] px-1 font-mono text-xs tabular-nums text-[var(--ink-dim)] transition-colors duration-150 hover:bg-[var(--surface-2)] focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--idle)]"
           onClick={onResetZoom}
           aria-label={`Reset canvas zoom to 100%. Current zoom ${zoomPercent}`}
           aria-keyshortcuts="0"
@@ -421,7 +421,7 @@ function BoardState({ loading, error, hasTiles }: BoardStateProps) {
         role="alert"
         aria-labelledby="stoa-connect-title"
       >
-        <p className="mb-1 font-mono text-[11px] text-[var(--idle)]">local fleet connection</p>
+        <p className="mb-1 font-mono text-[11px] text-[var(--ink-dim)]">local fleet connection</p>
         <h2 id="stoa-connect-title" className="text-lg font-semibold text-[var(--ink)]">
           Point Stoa at your maw-serve
         </h2>
@@ -430,7 +430,7 @@ function BoardState({ loading, error, hasTiles }: BoardStateProps) {
           on your machine and are fetched directly by this browser.
         </p>
         {activeHost ? (
-          <p className="mt-3 break-all font-mono text-xs text-[var(--error)]">
+          <p className="mt-3 break-all font-mono text-xs text-[var(--ink)]">
             Could not reach {activeHost}
           </p>
         ) : null}
@@ -453,7 +453,7 @@ function BoardState({ loading, error, hasTiles }: BoardStateProps) {
               aria-describedby="stoa-host-hint"
             />
             <button
-              className="min-h-9 shrink-0 rounded-md bg-[var(--idle)] px-3 text-sm font-semibold text-[var(--bg)] transition-colors duration-150 hover:bg-[var(--active)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--idle)]"
+              className="min-h-9 shrink-0 rounded-md bg-[var(--idle)] px-3 text-sm font-semibold text-[var(--ink-inverse)] transition-colors duration-150 hover:bg-[var(--active)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--idle)]"
               type="submit"
             >
               Connect
@@ -481,7 +481,7 @@ function BoardState({ loading, error, hasTiles }: BoardStateProps) {
 
   return (
     <p
-      className={`pointer-events-none absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 font-mono text-sm ${error ? "text-[var(--error)]" : "text-[var(--ink-dim)]"}`}
+      className={`pointer-events-none absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 font-mono text-sm ${error ? "text-[var(--ink)]" : "text-[var(--ink-dim)]"}`}
       role={error ? "alert" : "status"}
     >
       {message}
