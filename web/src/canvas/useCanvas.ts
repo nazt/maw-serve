@@ -10,7 +10,25 @@ import {
 
 export const MIN_CANVAS_ZOOM = 0.35;
 export const MAX_CANVAS_ZOOM = 2;
+export const CANVAS_SOURCE_TEXT_PX = 12;
+export const MIN_READABLE_CANVAS_TEXT_PX = 9;
+export const MIN_READABLE_FIT_ZOOM =
+  MIN_READABLE_CANVAS_TEXT_PX / CANVAS_SOURCE_TEXT_PX;
 export const DEFAULT_TILE_ANCHOR = [160, 100] as const;
+
+export type CanvasSafeArea = {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+};
+
+export const DEFAULT_CANVAS_SAFE_AREA: Readonly<CanvasSafeArea> = {
+  top: 64,
+  right: 16,
+  bottom: 104,
+  left: 16,
+};
 
 export type CanvasCenter = readonly [number, number];
 export type CanvasPoint = { x: number; y: number };
@@ -38,6 +56,8 @@ export type UseCanvasOptions = {
   zoom?: number;
   anchor?: CanvasCenter;
   fitPadding?: number;
+  fitMinZoom?: number;
+  fitSafeArea?: Partial<CanvasSafeArea>;
 };
 
 export type FocusOptions = {
@@ -82,6 +102,91 @@ const finite = (value: unknown, fallback = 0) => {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
 };
+
+export interface CalculateFitViewOptions {
+  viewport: CanvasPoint;
+  anchor: CanvasCenter;
+  padding: number;
+  safeArea: Readonly<CanvasSafeArea>;
+  minZoom?: number;
+  maxZoom?: number;
+}
+
+/**
+ * Frames world geometry inside the unobscured canvas. If the whole board would
+ * make source labels illegible, the zoom floor wins and overflow remains
+ * available by panning instead of being compressed beneath the chrome.
+ */
+export function calculateFitView(
+  rects: Iterable<WorldRect>,
+  options: CalculateFitViewOptions,
+): CanvasView | null {
+  const bounds = {
+    minX: Infinity,
+    minY: Infinity,
+    maxX: -Infinity,
+    maxY: -Infinity,
+  };
+
+  for (const rect of rects) {
+    if (![rect.x, rect.y, rect.w, rect.h].every(Number.isFinite)) continue;
+    bounds.minX = Math.min(bounds.minX, rect.x);
+    bounds.minY = Math.min(bounds.minY, rect.y);
+    bounds.maxX = Math.max(bounds.maxX, rect.x + Math.max(0, rect.w));
+    bounds.maxY = Math.max(bounds.maxY, rect.y + Math.max(0, rect.h));
+  }
+  if (!Number.isFinite(bounds.minX)) return null;
+
+  const viewport = {
+    x: Math.max(1, finite(options.viewport.x, 1)),
+    y: Math.max(1, finite(options.viewport.y, 1)),
+  };
+  const padding = Math.max(0, finite(options.padding));
+  const safeArea = {
+    top: Math.max(0, finite(options.safeArea.top)),
+    right: Math.max(0, finite(options.safeArea.right)),
+    bottom: Math.max(0, finite(options.safeArea.bottom)),
+    left: Math.max(0, finite(options.safeArea.left)),
+  };
+  const safeLeft = Math.min(viewport.x - 1, safeArea.left + padding);
+  const safeTop = Math.min(viewport.y - 1, safeArea.top + padding);
+  const safeRight = Math.max(safeLeft + 1, viewport.x - safeArea.right - padding);
+  const safeBottom = Math.max(safeTop + 1, viewport.y - safeArea.bottom - padding);
+  const safeMidpoint = {
+    x: (safeLeft + safeRight) / 2,
+    y: (safeTop + safeBottom) / 2,
+  };
+  const contentWidth = Math.max(1, bounds.maxX - bounds.minX);
+  const contentHeight = Math.max(1, bounds.maxY - bounds.minY);
+  const minZoom = clamp(
+    finite(options.minZoom, MIN_READABLE_FIT_ZOOM),
+    MIN_CANVAS_ZOOM,
+    MAX_CANVAS_ZOOM,
+  );
+  const maxZoom = clamp(
+    finite(options.maxZoom, MAX_CANVAS_ZOOM),
+    minZoom,
+    MAX_CANVAS_ZOOM,
+  );
+  const zoom = clamp(
+    Math.min(
+      (safeRight - safeLeft) / contentWidth,
+      (safeBottom - safeTop) / contentHeight,
+    ),
+    minZoom,
+    maxZoom,
+  );
+  const midpointX = (bounds.minX + bounds.maxX) / 2;
+  const midpointY = (bounds.minY + bounds.maxY) / 2;
+
+  return {
+    center: [
+      midpointX + viewport.x / 2 - options.anchor[0] - safeMidpoint.x / zoom,
+      midpointY + viewport.y / 2 - options.anchor[1] - safeMidpoint.y / zoom,
+    ],
+    zoom,
+  };
+}
 
 function readPoint(input: PointInput | number, y?: number, screen = false): CanvasPoint {
   if (typeof input === "number") return { x: finite(input), y: finite(y) };
@@ -129,6 +234,22 @@ export function useCanvas(options: UseCanvasOptions = {}): CanvasController {
     [options.anchor?.[0], options.anchor?.[1]],
   );
   const fitPadding = Math.max(0, finite(options.fitPadding, 64));
+  const fitMinZoom = clamp(
+    finite(options.fitMinZoom, MIN_READABLE_FIT_ZOOM),
+    MIN_CANVAS_ZOOM,
+    MAX_CANVAS_ZOOM,
+  );
+  const fitSafeArea = useMemo<CanvasSafeArea>(() => ({
+    top: Math.max(0, finite(options.fitSafeArea?.top, DEFAULT_CANVAS_SAFE_AREA.top)),
+    right: Math.max(0, finite(options.fitSafeArea?.right, DEFAULT_CANVAS_SAFE_AREA.right)),
+    bottom: Math.max(0, finite(options.fitSafeArea?.bottom, DEFAULT_CANVAS_SAFE_AREA.bottom)),
+    left: Math.max(0, finite(options.fitSafeArea?.left, DEFAULT_CANVAS_SAFE_AREA.left)),
+  }), [
+    options.fitSafeArea?.bottom,
+    options.fitSafeArea?.left,
+    options.fitSafeArea?.right,
+    options.fitSafeArea?.top,
+  ]);
   const initialView: MutableView = {
     center: initialCenter,
     zoom: clamp(finite(options.zoom, 1), MIN_CANVAS_ZOOM, MAX_CANVAS_ZOOM),
@@ -331,13 +452,6 @@ export function useCanvas(options: UseCanvasOptions = {}): CanvasController {
     (rects?: Iterable<WorldRect>) => {
       cancelFocusAnimation();
 
-      const bounds = {
-        minX: Infinity,
-        minY: Infinity,
-        maxX: -Infinity,
-        maxY: -Infinity,
-      };
-
       const source = rects
         ? Array.from(rects)
         : Array.from(fabricRef.current?.querySelectorAll<HTMLElement>("[data-world-x][data-world-y]") ?? [])
@@ -354,40 +468,17 @@ export function useCanvas(options: UseCanvasOptions = {}): CanvasController {
               };
             })
             .filter((rect): rect is WorldRect => rect !== null);
-
-      for (const rect of source) {
-        if (![rect.x, rect.y, rect.w, rect.h].every(Number.isFinite)) continue;
-        bounds.minX = Math.min(bounds.minX, rect.x);
-        bounds.minY = Math.min(bounds.minY, rect.y);
-        bounds.maxX = Math.max(bounds.maxX, rect.x + Math.max(0, rect.w));
-        bounds.maxY = Math.max(bounds.maxY, rect.y + Math.max(0, rect.h));
-      }
-
-      if (!Number.isFinite(bounds.minX)) return;
-
       const viewport = viewportSize(fabricRef.current);
-      const contentWidth = Math.max(1, bounds.maxX - bounds.minX);
-      const contentHeight = Math.max(1, bounds.maxY - bounds.minY);
-      const nextZoom = clamp(
-        Math.min(
-          Math.max(1, viewport.x - fitPadding * 2) / contentWidth,
-          Math.max(1, viewport.y - fitPadding * 2) / contentHeight,
-        ),
-        MIN_CANVAS_ZOOM,
-        MAX_CANVAS_ZOOM,
-      );
-      const midpointX = (bounds.minX + bounds.maxX) / 2;
-      const midpointY = (bounds.minY + bounds.maxY) / 2;
-
-      commitView(() => ({
-        center: [
-          midpointX + viewport.x / 2 - anchor[0] - viewport.x / (2 * nextZoom),
-          midpointY + viewport.y / 2 - anchor[1] - viewport.y / (2 * nextZoom),
-        ],
-        zoom: nextZoom,
-      }));
+      const next = calculateFitView(source, {
+        viewport,
+        anchor,
+        padding: fitPadding,
+        safeArea: fitSafeArea,
+        minZoom: fitMinZoom,
+      });
+      if (next) commitView(() => ({ center: [...next.center], zoom: next.zoom }));
     },
-    [anchor, cancelFocusAnimation, commitView, fitPadding],
+    [anchor, cancelFocusAnimation, commitView, fitMinZoom, fitPadding, fitSafeArea],
   );
 
   const focusOn = useCallback(
