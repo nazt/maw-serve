@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 
 import {
   boardPageHref,
@@ -15,6 +15,7 @@ interface PageTabsProps {
 }
 
 const subActionClass = "grid h-11 w-11 shrink-0 place-items-center rounded text-[var(--ink-dim)] opacity-0 transition-[color,background-color,opacity] duration-150 hover:bg-[var(--surface-2)] hover:text-[var(--ink)] focus:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-[var(--idle)] group-hover:opacity-100 motion-reduce:transition-none";
+let pendingKeyboardFocusPageId: string | null = null;
 
 export default function PageTabs({
   pages,
@@ -27,12 +28,25 @@ export default function PageTabs({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const tabRefs = useRef(new Map<string, HTMLAnchorElement>());
 
   useEffect(() => {
     if (!editingId) return;
     inputRef.current?.focus();
     inputRef.current?.select();
   }, [editingId]);
+
+  useEffect(() => {
+    if (pendingKeyboardFocusPageId !== activePageId) return;
+    const frame = window.requestAnimationFrame(() => {
+      if (pendingKeyboardFocusPageId !== activePageId) return;
+      const activeTab = tabRefs.current.get(activePageId);
+      activeTab?.focus();
+      activeTab?.scrollIntoView({ block: "nearest", inline: "nearest" });
+      pendingKeyboardFocusPageId = null;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activePageId]);
 
   const beginRename = (page: BoardPage) => {
     setDraft(page.name);
@@ -45,6 +59,37 @@ export default function PageTabs({
     setEditingId(null);
   };
 
+  const selectAdjacentPage = (
+    event: KeyboardEvent<HTMLAnchorElement>,
+    currentIndex: number,
+  ) => {
+    if (event.altKey || event.ctrlKey || event.metaKey || pages.length === 0) return;
+
+    let nextIndex: number;
+    switch (event.key) {
+      case "ArrowRight":
+        nextIndex = (currentIndex + 1) % pages.length;
+        break;
+      case "ArrowLeft":
+        nextIndex = (currentIndex - 1 + pages.length) % pages.length;
+        break;
+      case "Home":
+        nextIndex = 0;
+        break;
+      case "End":
+        nextIndex = pages.length - 1;
+        break;
+      default:
+        return;
+    }
+
+    event.preventDefault();
+    const nextPage = pages[nextIndex];
+    if (nextPage.id === activePageId) return;
+    pendingKeyboardFocusPageId = nextPage.id;
+    onSelect(nextPage.id);
+  };
+
   return (
     <nav
       className="pointer-events-auto flex min-w-0 items-center gap-1 font-mono"
@@ -54,8 +99,9 @@ export default function PageTabs({
         className="flex min-w-0 max-w-[min(70vw,52rem)] items-center gap-0.5 overflow-x-auto"
         role="tablist"
         aria-label="Board pages"
+        aria-orientation="horizontal"
       >
-        {pages.map((page) => {
+        {pages.map((page, pageIndex) => {
           const active = page.id === activePageId;
           return (
             <span
@@ -81,16 +127,23 @@ export default function PageTabs({
                 />
               ) : (
                 <a
-                  className={`border-b px-1.5 py-0.5 text-xs transition-colors duration-150 focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-[var(--idle)] ${
+                  ref={(element) => {
+                    if (element) tabRefs.current.set(page.id, element);
+                    else tabRefs.current.delete(page.id);
+                  }}
+                  className={`inline-flex h-11 items-center rounded border-b px-2 text-xs transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-[var(--idle)] motion-reduce:transition-none ${
                     active
                       ? "border-[var(--idle)] text-[var(--ink)]"
                       : "border-transparent text-[var(--ink-dim)] hover:text-[var(--ink)]"
                   }`}
                   href={boardPageHref(page.id)}
                   role="tab"
+                  data-page-tab-id={page.id}
                   aria-selected={active}
                   aria-controls="board-fabric"
+                  aria-keyshortcuts="ArrowLeft ArrowRight Home End"
                   tabIndex={active ? 0 : -1}
+                  onKeyDown={(event) => selectAdjacentPage(event, pageIndex)}
                   onClick={(event) => {
                     if (
                       event.button !== 0 ||
