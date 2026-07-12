@@ -8,7 +8,11 @@ function assets() {
     paths,
     binding: {
       fetch(request: Request) {
-        paths.push(new URL(request.url).pathname);
+        const url = new URL(request.url);
+        paths.push(url.pathname);
+        if (url.pathname === "/index.html") {
+          return Promise.resolve(Response.redirect(new URL("/", url), 307));
+        }
         return Promise.resolve(new Response("asset", { status: 200 }));
       },
     },
@@ -29,14 +33,15 @@ test("Cloudflare root redirects into the Vite base path", async () => {
 
 test("Cloudflare rewrites the Vite base path to public assets", async () => {
   const mock = assets();
-  await worker.fetch(new Request("https://stoa.example.com/api/agora/"), {
+  const board = await worker.fetch(new Request("https://stoa.example.com/api/agora/"), {
     ASSETS: mock.binding,
   });
   await worker.fetch(new Request("https://stoa.example.com/api/agora/assets/app.js"), {
     ASSETS: mock.binding,
   });
 
-  expect(mock.paths).toEqual(["/index.html", "/assets/app.js"]);
+  expect(board.status).toBe(200);
+  expect(mock.paths).toEqual(["/", "/assets/app.js"]);
 });
 
 test("Cloudflare never impersonates a local data endpoint", async () => {

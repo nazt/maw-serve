@@ -30,7 +30,7 @@ export default {
     }
 
     if (url.pathname === BASE_PATH || url.pathname === `${BASE_PATH}/`) {
-      return env.ASSETS.fetch(assetRequest(request, "/index.html"));
+      return env.ASSETS.fetch(assetRequest(request, "/"));
     }
 
     if (url.pathname.startsWith(`${BASE_PATH}/`)) {
