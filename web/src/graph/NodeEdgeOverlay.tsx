@@ -12,6 +12,7 @@ import {
 import type { CanvasController, CanvasPoint } from "../canvas/useCanvas";
 import { transformPoint } from "../tiles/useDrag";
 import type { NodeEdge } from "./edges";
+import "./NodeEdgeOverlay.css";
 
 export interface EdgeNode {
   id: string;
@@ -206,9 +207,10 @@ export function NodeConnectHandle({
 }: NodeConnectHandleProps) {
   const safeZoom = Math.max(0.01, Number.isFinite(zoom) ? zoom : 1);
   const style = {
-    "--node-handle-hit-w": `${18 / safeZoom}px`,
-    "--node-handle-hit-h": `${24 / safeZoom}px`,
-    "--node-handle-offset": `${-9 / safeZoom}px`,
+    // The resting CSS transform is scale(.82), so 54px preserves a 44px hit target.
+    "--node-handle-hit-w": `${54 / safeZoom}px`,
+    "--node-handle-hit-h": `${54 / safeZoom}px`,
+    "--node-handle-offset": `${-14 / safeZoom}px`,
     "--node-handle-dot": `${9 / safeZoom}px`,
   } as CSSProperties;
 
@@ -252,6 +254,7 @@ export function NodeEdgeOverlay({
 }: NodeEdgeOverlayProps) {
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [focusedEdgeId, setFocusedEdgeId] = useState<string | null>(null);
+  const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState("");
   const previousEdgesRef = useRef<readonly NodeEdge[] | null>(null);
   const edgeFocusRefs = useRef(new Map<string, HTMLButtonElement>());
@@ -268,7 +271,10 @@ export function NodeEdgeOverlay({
     if (focusedEdgeId && !edges.some((edge) => edge.id === focusedEdgeId)) {
       setFocusedEdgeId(null);
     }
-  }, [edges, focusedEdgeId, selectedEdgeId]);
+    if (hoveredEdgeId && !edges.some((edge) => edge.id === hoveredEdgeId)) {
+      setHoveredEdgeId(null);
+    }
+  }, [edges, focusedEdgeId, hoveredEdgeId, selectedEdgeId]);
 
   useEffect(() => {
     const previousEdges = previousEdgesRef.current;
@@ -411,8 +417,13 @@ export function NodeEdgeOverlay({
               <path
                 className="node-edge__hit"
                 d={curve.path}
+                style={{ strokeWidth: 44 }}
                 aria-hidden="true"
                 onPointerDown={(event) => event.stopPropagation()}
+                onPointerEnter={() => setHoveredEdgeId(edge.id)}
+                onPointerLeave={() => setHoveredEdgeId((current) => (
+                  current === edge.id ? null : current
+                ))}
                 onClick={(event) => {
                   event.stopPropagation();
                   focusEdge(edge.id);
@@ -426,60 +437,70 @@ export function NodeEdgeOverlay({
         ) : null}
       </svg>
       <div className="node-edge-controls">
-        {visibleEdges.map(({ edge, from, to, curve }) => (
-          <div
-            key={edge.id}
-            className="node-edge__control"
-            style={{ left: curve.midpoint.x, top: curve.midpoint.y }}
-          >
-            <button
-              type="button"
-              className="node-edge__label"
-              style={{ border: 0, pointerEvents: "auto" }}
-              ref={(element) => {
-                if (element) edgeFocusRefs.current.set(edge.id, element);
-                else edgeFocusRefs.current.delete(edge.id);
-              }}
-              data-edge-focus-id={edge.id}
-              aria-label={`Link from ${from.data.oracle} to ${to.data.oracle}. Press Delete to disconnect. Use arrow keys to move between links.`}
-              aria-keyshortcuts="Delete Backspace ArrowLeft ArrowRight ArrowUp ArrowDown Home End"
-              aria-pressed={selectedEdgeId === edge.id}
-              onPointerDown={(event) => event.stopPropagation()}
-              onClick={(event) => {
-                event.stopPropagation();
-                focusEdge(edge.id);
-              }}
-              onFocus={() => selectEdge(edge.id)}
-              onBlur={() => setFocusedEdgeId((current) => (
+        {visibleEdges.map(({ edge, from, to, curve }) => {
+          const selected = selectedEdgeId === edge.id;
+          const focused = focusedEdgeId === edge.id;
+          const hovered = hoveredEdgeId === edge.id;
+          const revealed = selected || focused || hovered;
+          return (
+            <div
+              key={edge.id}
+              className="node-edge__control"
+              style={{ left: curve.midpoint.x, top: curve.midpoint.y }}
+              onPointerEnter={() => setHoveredEdgeId(edge.id)}
+              onPointerLeave={() => setHoveredEdgeId((current) => (
                 current === edge.id ? null : current
               ))}
-              onKeyDown={(event) => handleEdgeKeyDown(edge, event)}
             >
-              {from.data.oracle}{" "}
-              {reducedMotion ? (
-                <span aria-hidden="true" data-edge-direction="static">»</span>
-              ) : (
-                <span aria-hidden="true">↔</span>
-              )}{" "}
-              {to.data.oracle}
-            </button>
-            {selectedEdgeId === edge.id ? (
               <button
                 type="button"
-                className="node-edge__delete"
-                aria-label={`Disconnect ${from.data.oracle} and ${to.data.oracle}`}
-                title="Disconnect oracles"
+                className="node-edge__label node-edge__label--contextual"
+                ref={(element) => {
+                  if (element) edgeFocusRefs.current.set(edge.id, element);
+                  else edgeFocusRefs.current.delete(edge.id);
+                }}
+                data-edge-focus-id={edge.id}
+                data-visible={revealed || undefined}
+                aria-label={`Link from ${from.data.oracle} to ${to.data.oracle}. Press Delete to disconnect. Use arrow keys to move between links.`}
+                aria-keyshortcuts="Delete Backspace ArrowLeft ArrowRight ArrowUp ArrowDown Home End"
+                aria-pressed={selected}
                 onPointerDown={(event) => event.stopPropagation()}
                 onClick={(event) => {
                   event.stopPropagation();
-                  onDelete(edge.id);
+                  focusEdge(edge.id);
                 }}
+                onFocus={() => selectEdge(edge.id)}
+                onBlur={() => setFocusedEdgeId((current) => (
+                  current === edge.id ? null : current
+                ))}
+                onKeyDown={(event) => handleEdgeKeyDown(edge, event)}
               >
-                ×
+                {from.data.oracle}{" "}
+                {reducedMotion ? (
+                  <span aria-hidden="true" data-edge-direction="static">»</span>
+                ) : (
+                  <span aria-hidden="true">↔</span>
+                )}{" "}
+                {to.data.oracle}
               </button>
-            ) : null}
-          </div>
-        ))}
+              {selected ? (
+                <button
+                  type="button"
+                  className="node-edge__delete node-edge__delete--hit"
+                  aria-label={`Disconnect ${from.data.oracle} and ${to.data.oracle}`}
+                  title="Disconnect oracles"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onDelete(edge.id);
+                  }}
+                >
+                  <span className="node-edge__delete-glyph" aria-hidden="true">×</span>
+                </button>
+              ) : null}
+            </div>
+          );
+        })}
       </div>
       <p
         className="sr-only"

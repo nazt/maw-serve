@@ -1,0 +1,50 @@
+.node-edge__label.node-edge__label--contextual {
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms var(--ease-out-expo);
+}
+
+.node-edge__label.node-edge__label--contextual[data-visible="true"] {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.node-edge__delete.node-edge__delete--hit {
+  width: 44px;
+  height: 44px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.node-edge__delete.node-edge__delete--hit:hover {
+  background: transparent;
+}
+
+.node-edge__delete-glyph {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 1px solid var(--error);
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: 0 0 6px var(--error-glow);
+  color: var(--ink);
+  transition:
+    background-color 140ms var(--ease-out-expo),
+    color 140ms var(--ease-out-expo);
+}
+
+.node-edge__delete--hit:hover .node-edge__delete-glyph {
+  background: var(--error);
+  color: var(--ink-inverse);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .node-edge__label.node-edge__label--contextual,
+  .node-edge__delete-glyph {
+    transition: none;
+  }
+}
