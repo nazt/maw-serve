@@ -195,6 +195,7 @@ interface NodeConnectHandleProps {
   nodeName: string;
   connected: boolean;
   zoom: number;
+  tabIndex?: number;
   events: EdgeHandleEvents;
 }
 
@@ -203,6 +204,7 @@ export function NodeConnectHandle({
   nodeName,
   connected,
   zoom,
+  tabIndex,
   events,
 }: NodeConnectHandleProps) {
   const safeZoom = Math.max(0.01, Number.isFinite(zoom) ? zoom : 1);
@@ -223,6 +225,7 @@ export function NodeConnectHandle({
       aria-label={`Connect ${nodeName} to another oracle`}
       title="Drag to another oracle to link"
       style={style}
+      tabIndex={tabIndex}
       onPointerDown={(event) => events.begin(nodeId, event)}
       onPointerMove={events.move}
       onPointerUp={events.end}

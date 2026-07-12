@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties, KeyboardEventHandler, ReactNode } from "react";
 import {
   transformPoint,
   useDrag,
@@ -18,6 +18,11 @@ export interface TileProps<Item extends TileItem = TileItem> {
   style?: CSSProperties;
   minWidth?: number;
   minHeight?: number;
+  tabIndex?: number;
+  resizeTabIndex?: number;
+  ariaLabel?: string;
+  ariaCurrent?: boolean;
+  onKeyDown?: KeyboardEventHandler<HTMLElement>;
   onActivate?: (item: Item) => void;
   aspectRatio?: number | null;
   onChange?: (item: Item, kind: TileChangeKind) => void;
@@ -72,6 +77,11 @@ export function Tile<Item extends TileItem>({
   style,
   minWidth,
   minHeight,
+  tabIndex,
+  resizeTabIndex,
+  ariaLabel,
+  ariaCurrent,
+  onKeyDown,
   onActivate,
   aspectRatio,
   onChange,
@@ -128,6 +138,10 @@ export function Tile<Item extends TileItem>({
             onActivate?.(item);
           }
         }}
+        onKeyDown={onKeyDown}
+        tabIndex={tabIndex}
+        aria-label={ariaLabel}
+        aria-current={ariaCurrent || undefined}
         data-dragging={dragging || undefined}
         data-kind={item.kind}
         data-resizing={resizing || undefined}
@@ -154,6 +168,7 @@ export function Tile<Item extends TileItem>({
           className="resize-handle tile-resize-handle absolute z-20 cursor-nwse-resize touch-none border-0 bg-transparent p-0"
           data-resize-handle="true"
           style={resizeHandleStyle}
+          tabIndex={resizeTabIndex}
           type="button"
         >
           <span className="tile-resize-handle__glyph" aria-hidden="true" />
