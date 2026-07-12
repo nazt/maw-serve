@@ -8,6 +8,7 @@ export interface StatusBarProps {
   items: FleetTileItem[];
   usage: UsagePayload | null;
   error?: Error | null;
+  usageError?: Error | null;
   theme: Theme;
   onToggleTheme: () => void;
   className?: string;
@@ -75,6 +76,7 @@ export function StatusBar({
   items,
   usage,
   error = null,
+  usageError = null,
   theme,
   onToggleTheme,
   className = "",
@@ -103,6 +105,8 @@ export function StatusBar({
   const buildBadge = `build ${__STOA_BUILD__.branch}@${__STOA_BUILD__.commit}`;
   const label = error
     ? "Fleet telemetry link interrupted"
+    : usageError
+      ? `Fleet status: ${summary.active} active, ${summary.idle} idle, ${summary.stale} stale; usage rates unavailable`
     : `Fleet status: ${summary.active} active, ${summary.idle} idle, ${summary.stale} stale, ${summary.burnPerHour} tokens per hour, ${summary.accounts} accounts`;
   const nextTheme = theme === "plain" ? "phosphor" : "plain";
 
@@ -119,14 +123,17 @@ export function StatusBar({
           </span>
         ) : (
           <>
-            <Metric label="tok/h" value={compactNumber.format(summary.burnPerHour)} />
+            <Metric
+              label="tok/h"
+              value={usageError ? "—" : compactNumber.format(summary.burnPerHour)}
+            />
             <span className="h-3 w-px shrink-0 bg-[var(--line)]" aria-hidden="true" />
             <Metric label="active" value={summary.active} />
             <Metric label="idle" value={summary.idle} />
             <Metric label="stale" value={summary.stale} />
             <Metric
-              label={summary.accounts === 1 ? "account" : "accounts"}
-              value={summary.accounts}
+              label={usageError ? "rates unavailable" : summary.accounts === 1 ? "account" : "accounts"}
+              value={usageError ? "—" : summary.accounts}
             />
           </>
         )}

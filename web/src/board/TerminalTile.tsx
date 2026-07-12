@@ -23,6 +23,10 @@ import {
   type TerminalCellMetrics,
   type TerminalSourceDimensions,
 } from "./terminalSizing";
+import {
+  terminalHealth,
+  type TerminalConnectionStatus,
+} from "./terminalHealth";
 
 export interface TerminalTileItem {
   id: string;
@@ -53,8 +57,6 @@ export interface TerminalTileProps {
   streamLane?: StreamLeaseLane;
   streamPriority?: number;
 }
-
-type ConnectionStatus = "connecting" | "live" | "reconnecting" | "polling" | "error";
 
 const STREAM_LINES = 120;
 const MAX_STREAM_FAILURES = 3;
@@ -120,14 +122,6 @@ function cachedCapture(url: string): Promise<string> {
   });
   captureCache.set(url, { at: now, promise });
   return promise;
-}
-
-function statusLabel(status: ConnectionStatus): string {
-  if (status === "live") return "live";
-  if (status === "reconnecting") return "reconnecting…";
-  if (status === "polling") return "polling (fallback)";
-  if (status === "error") return "error";
-  return "connecting…";
 }
 
 function fleetTerminalTheme(): ITheme {
@@ -196,7 +190,7 @@ function lineCount(text: string): number {
   return text.split("\n").length - 1;
 }
 
-function statusDot(status: ConnectionStatus): string {
+function statusDot(status: TerminalConnectionStatus): string {
   if (status === "live") return "bg-[var(--active)]";
   if (status === "reconnecting") return "bg-[var(--pinned)]";
   if (status === "error") return "bg-[var(--error)]";
@@ -213,8 +207,9 @@ export function TerminalTile({
   streamLane = "working",
   streamPriority = STREAM_PRIORITY.normal,
 }: TerminalTileProps) {
-  const [status, setStatus] = useState<ConnectionStatus>("connecting");
+  const [status, setStatus] = useState<TerminalConnectionStatus>("connecting");
   const [error, setError] = useState<string | null>(null);
+  const [retryEpoch, setRetryEpoch] = useState(0);
   const [newLineCount, setNewLineCount] = useState(0);
   const [selectMode, setSelectMode] = useState(false);
   const [temporarySelect, setTemporarySelect] = useState(false);
@@ -228,6 +223,7 @@ export function TerminalTile({
   const resumeFollowRef = useRef<() => void>(() => {});
   const selecting = selectMode || temporarySelect;
   const zoomPercent = Math.round(zoomFactor * 100);
+  const health = terminalHealth(status, error);
 
   useEffect(() => {
     onTransportModeChange?.(item.id, transportMode);
@@ -483,7 +479,7 @@ export function TerminalTile({
     };
     reducedMotion.addEventListener("change", onMotionPreference);
 
-    const updateStatus = (next: ConnectionStatus, detail: string | null = null) => {
+    const updateStatus = (next: TerminalConnectionStatus, detail: string | null = null) => {
       if (disposed) return;
       setStatus(next);
       setError(detail);
@@ -495,24 +491,26 @@ export function TerminalTile({
       lines: String(STREAM_LINES),
     });
 
+    let pollingDetail: string | null = null;
     const poll = () => {
       const url = apiUrlWithParams(API_ENDPOINTS.capture, captureParams());
       void cachedCapture(url).then((text) => {
         if (disposed) return;
         queueWrite(text || "(empty pane)", true);
-        updateStatus("polling");
-      }).catch((reason: unknown) => {
+        updateStatus("polling", pollingDetail);
+      }).catch(() => {
         if (disposed) return;
-        updateStatus("error", reason instanceof Error ? reason.message : String(reason));
+        updateStatus("error", "Terminal snapshots unavailable");
       });
     };
 
-    const startPolling = () => {
+    const startPolling = (detail: string | null = null) => {
       if (pollingStarted || disposed) return;
       pollingStarted = true;
+      pollingDetail = detail;
       eventSource?.close();
       eventSource = null;
-      updateStatus("polling");
+      updateStatus("polling", pollingDetail);
       poll();
       pollTimer = window.setInterval(poll, Math.max(1_000, pollIntervalMs));
     };
@@ -547,8 +545,10 @@ export function TerminalTile({
       eventSource.onerror = () => {
         if (disposed || pollingStarted) return;
         reconnectFailures += 1;
-        updateStatus("reconnecting");
-        if (reconnectFailures >= MAX_STREAM_FAILURES) startPolling();
+        updateStatus("reconnecting", "Live stream interrupted; reconnecting");
+        if (reconnectFailures >= MAX_STREAM_FAILURES) {
+          startPolling("Live stream unavailable; using snapshots");
+        }
       };
     };
 
@@ -569,7 +569,7 @@ export function TerminalTile({
       if (terminalRef.current === terminal) terminalRef.current = null;
       terminal.dispose();
     };
-  }, [item.data.session, item.data.window, pollIntervalMs, transportMode]);
+  }, [item.data.session, item.data.window, pollIntervalMs, retryEpoch, transportMode]);
 
   useEffect(() => {
     zoomFactorRef.current = zoomFactor;
@@ -588,6 +588,8 @@ export function TerminalTile({
       }`}
       data-terminal-select-mode={selectMode ? "select" : "view"}
       data-terminal-mode={transportMode}
+      data-terminal-status={status}
+      data-terminal-degraded={health.degraded || undefined}
     >
       <header className="flex h-9 shrink-0 items-center gap-2 border-b border-[var(--line)] bg-[var(--terminal-header)] px-2.5 font-mono">
         <span className={`h-1.5 w-1.5 rounded-full ${statusDot(status)}`} aria-hidden="true" />
@@ -602,6 +604,11 @@ export function TerminalTile({
         <span className="max-w-[45%] truncate text-[10px] text-[var(--ink-dim)]">
           {item.data.session}:{item.data.window}
         </span>
+        {health.degraded ? (
+          <span className="shrink-0 rounded border border-[var(--error)] px-1 py-0.5 text-[9px] font-bold text-[var(--error)]">
+            degraded
+          </span>
+        ) : null}
         <span
           className="flex h-5 shrink-0 items-stretch overflow-hidden rounded border border-[var(--line)] bg-[var(--terminal-surface)]"
           role="group"
@@ -723,13 +730,29 @@ export function TerminalTile({
       </div>
 
       <footer
-        className="shrink-0 border-t border-[var(--line)] px-2.5 py-1 font-mono text-[9px] tabular-nums text-[var(--ink-dim)]"
+        className="flex min-h-6 shrink-0 items-center gap-2 border-t border-[var(--line)] px-2.5 py-1 font-mono text-[9px] tabular-nums text-[var(--ink-dim)]"
         aria-live="polite"
         title={error ?? undefined}
       >
-        {status === "live" ? (
-          <><span className="terminal-live-indicator" aria-hidden="true">●</span> {statusLabel(status)}</>
-        ) : statusLabel(status)}
+        <span className="min-w-0 flex-1 truncate">
+          {status === "live" ? (
+            <><span className="terminal-live-indicator" aria-hidden="true">●</span> {health.label}</>
+          ) : health.label}
+        </span>
+        {health.retryable ? (
+          <button
+            type="button"
+            className="shrink-0 rounded border border-[var(--line)] px-1.5 py-0.5 font-bold text-[var(--ink)] transition-colors duration-150 hover:border-[var(--idle)] focus-visible:outline focus-visible:outline-1 focus-visible:outline-[var(--idle)] motion-reduce:transition-none"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={() => {
+              setStatus("connecting");
+              setError(null);
+              setRetryEpoch((current) => current + 1);
+            }}
+          >
+            Retry
+          </button>
+        ) : null}
       </footer>
     </section>
   );
