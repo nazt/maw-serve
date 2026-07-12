@@ -12,9 +12,17 @@ export function redactSecrets(text: string): string {
 
   const replacements: Array<[RegExp, string]> = [
     [/\bsk-(?:ant-)?[A-Za-z0-9_-]{12,}\b/g, "[REDACTED_TOKEN]"],
-    [/\b(?:ghp|github_pat|glpat|xox[baprs])[_-][A-Za-z0-9_-]{12,}\b/g, "[REDACTED_TOKEN]"],
-    [/\bAKIA[0-9A-Z]{16}\b/g, "[REDACTED_ACCESS_KEY]"],
+    [/\b[psr]k_live_[A-Za-z0-9_-]{12,}\b/g, "[REDACTED_TOKEN]"],
+    [/\b(?:gh[opusr]|github_pat|glpat|xox[baprs])[_-][A-Za-z0-9_-]{12,}\b/g, "[REDACTED_TOKEN]"],
+    [/\bAIza[0-9A-Za-z_-]{35}\b/g, "[REDACTED_TOKEN]"],
+    [/\bnpm_[A-Za-z0-9]{36}\b/g, "[REDACTED_TOKEN]"],
+    [/\beyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, "[REDACTED_TOKEN]"],
+    [/\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, "[REDACTED_ACCESS_KEY]"],
     [/\b(Bearer\s+)[A-Za-z0-9._~+/=-]{8,}/gi, "$1[REDACTED]"],
+    [
+      /\b((?:key|token|secret|password|credential|auth)\s*(?:[:=]\s*|\s+))[A-Za-z0-9+/_-]{32,64}={0,2}(?=$|[\s"',;])/gi,
+      "$1[REDACTED]",
+    ],
     [
       /(\b[a-z][a-z0-9+.-]*:\/\/[^/\s:@]*:)[^@\s/]+(@)/gi,
       "$1[REDACTED]$2",
