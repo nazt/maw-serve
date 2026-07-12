@@ -1,41 +1,119 @@
 # maw-serve — Stoa, the Native Oracle Board
 
-## Trust model (§1 — non-negotiable, read this first)
+`maw-serve` hosts **Stoa**, an interactive observability board for the oracle fleet on the
+machine where it runs. Stoa turns `maw census --json` into draggable fleet tiles on an
+infinite canvas, adds activity-first tidy/fit, notes, images, read-only terminal snapshots,
+and optional Argus usage heat. It is a local projection of the fleet—not a source of truth—and
+serves the app and its read-only data endpoints under `/api/agora/*`.
 
-- **No secrets in feeds.** Every feed is scrubbed before it reaches the board — tokens, real
-  account identifiers, and captured screen/window content are redacted on ingest. This is an
-  enforced filter, not a hope.
-- **No filesystem serving by default.** The board never serves `/root`, home directories, or
-  any filesystem path unless a session opts in explicitly and sandboxes to a non-secret root.
-- **No UA-spoofing or evasion.** Transport is our own fleet infrastructure (`maw serve` +
-  federation), openly identified.
-- **Explicit auth via fleet identity.** Reuses `maw serve`'s ed25519 federation + TOFU trust
-  store + consent flow — not a shared password.
-- **State is a projection, not the source of truth.** The board's in-memory state is a cache
-  over the fleet's real sources (census, argus, window-arranger); it rehydrates from those
-  feeds on restart and never becomes canonical.
-- **v1 is read-only.** The board observes the fleet. No uploads, no canvas-edit, no write
-  terminals — those are v2.
+> **Screenshot placeholder:** add a current Stoa board capture here.
 
-## What this is
+## Prerequisites
 
-`maw-serve` is an external `maw` plugin that implements **Stoa**, a read-only fleet dashboard.
-It composes existing fleet primitives (argus usage, `maw census`/display-census topology,
-window-arranger layout) instead of rebuilding them — see
-[native-oracle-board-scope.md](https://github.com/Soul-Brews-Studio/agora-oracle) for the full
-design spec.
+Install these on the target machine before building Stoa:
 
-## Architecture
+### 1. Bun
 
-`maw`'s `engine.serve` (v1) is manifest-only route registration/discovery — the daemon on
-`:3456` reserves this plugin's prefix and answers health/events stubs, but does not execute
-handlers in-daemon, reverse-proxy, serve static files, or upgrade WebSockets on our behalf.
+Stoa uses Bun to install, build, and serve the app.
 
-So this board runs as its **own bun server on a side port**, launched by the plugin manifest
-(`plugin.json` → `engine.serve.command`). All board routes live under **`/api/agora/*`** —
-that prefix is load-bearing: a future daemon reverse-proxy (`:3456/api/agora/* → this process`)
-is a drop-in once it lands, because the URL shape never changes.
+```bash
+curl -fsSL https://bun.sh/install | bash
+bun --version
+```
 
-## Attribution
+If your current shell cannot find Bun after installation, open a new shell or add
+`$HOME/.bun/bin` to `PATH` as instructed by the installer.
 
-See [ATTRIBUTION.md](./ATTRIBUTION.md).
+### 2. `maw` CLI (maw-rs)
+
+The server shells out to `maw census --json` for the fleet and `maw peek` for explicit,
+read-only terminal captures. Install the current maw-rs release, which places a `maw` binary
+in `$HOME/.local/bin` by default:
+
+```bash
+curl -fsSL https://github.com/Soul-Brews-Studio/maw-rs/releases/latest/download/install.sh | sh
+export PATH="$HOME/.local/bin:$PATH"
+maw --version
+```
+
+See the [maw-rs releases](https://github.com/Soul-Brews-Studio/maw-rs/releases) for supported
+platform binaries and checksums. If maw-rs is installed another way, the only Stoa requirement
+is that a working executable named `maw` is on `PATH`.
+
+### 3. tmux with fleet sessions
+
+Install `tmux`, start the sessions you want to observe, and confirm that maw can see them:
+
+```bash
+tmux list-sessions
+maw census --json
+```
+
+Stoa shows **this machine's** fleet. An empty or stopped tmux environment produces an empty
+board even when the web server itself is healthy.
+
+### 4. Optional Argus network access
+
+The target should be able to reach `https://argus.buildwithoracle.com` to display per-oracle
+usage heat. Stoa gracefully degrades when Argus is unreachable: fleet tiles still load, but
+usage heat and account totals may be unavailable.
+
+## Quickstart
+
+```bash
+git clone https://github.com/nazt/maw-serve
+cd maw-serve/web
+bun install
+bun run build
+cd ..
+MAW_SERVE_PORT=4756 bun server-demo.ts
+```
+
+Open **http://127.0.0.1:4756/api/agora/**.
+
+The repository also includes an idempotent bootstrap that checks prerequisites, installs web
+dependencies, and builds the board without installing system software:
+
+```bash
+./scripts/install.sh
+```
+
+## Run forever (optional)
+
+With [PM2](https://pm2.keymetrics.io/) already installed:
+
+```bash
+cd maw-serve
+MAW_SERVE_PORT=4756 pm2 start "bun server-demo.ts" --name stoa
+pm2 save
+```
+
+On macOS, a user `launchd` agent can run the same command at login. Set its working directory
+to the cloned repository, include the Bun and maw directories in `PATH`, and use
+`MAW_SERVE_PORT=4756`. Keep the process bound to a trusted interface or put authentication in
+front of it before exposing it beyond localhost.
+
+## Trust model
+
+- **No secrets in feeds.** Usage exposes names and rates, not tokens or account credentials.
+- **No filesystem serving by default.** The board serves its built assets and named API routes,
+  not arbitrary home-directory paths.
+- **Explicit terminal capture.** Pane text is requested by a user action and remains read-only.
+- **State is a projection.** Census, Argus, and tmux remain authoritative; local board state is
+  presentation and workspace state.
+
+## Routes
+
+- `GET /api/agora/` — board SPA and SPA fallback
+- `GET /api/agora/census` — local topology from `maw census --json`
+- `GET /api/agora/usage` — Argus board-tile usage data, with no secrets
+- `GET /api/agora/capture?session=&window=&lines=` — explicit read-only pane snapshot
+
+For frontend features, architecture, and development notes, see
+[web/README.md](./web/README.md). For upstream inspiration and license details, see
+[ATTRIBUTION.md](./ATTRIBUTION.md).
+
+## Roadmap
+
+Install Stoa as a maw plugin (`maw agora`) once `engine.serve` v2 mounts external plugins—then
+no manual clone will be needed.
