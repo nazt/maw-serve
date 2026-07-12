@@ -78,7 +78,9 @@ import TerminalTile, {
   type TerminalTileItem,
 } from "./board/TerminalTile";
 import { STREAM_PRIORITY, type StreamLeaseMode } from "./board/streamLease";
-import OracleTileContent from "./fleet/OracleTileContent";
+import OracleTileContent, {
+  oracleHasConnectAffordance,
+} from "./fleet/OracleTileContent";
 import StatusBar, { summarizeFleet } from "./fleet/StatusBar";
 import {
   NodeConnectHandle,
@@ -2082,13 +2084,15 @@ function BoardPageView({
                   }}
                 >
                   <OracleTileContent item={item} />
-                  <NodeConnectHandle
-                    nodeId={item.data.oracle}
-                    nodeName={item.data.oracle}
-                    connected={connectedOracleNames.has(item.data.oracle)}
-                    zoom={canvas.zoom}
-                    events={edgeDrag.events}
-                  />
+                  {oracleHasConnectAffordance(item) ? (
+                    <NodeConnectHandle
+                      nodeId={item.data.oracle}
+                      nodeName={item.data.oracle}
+                      connected={connectedOracleNames.has(item.data.oracle)}
+                      zoom={canvas.zoom}
+                      events={edgeDrag.events}
+                    />
+                  ) : null}
                   {oracleDisplayPages.get(normalizeOracleHandle(item.data.oracle)) ? (
                     <a
                       className="absolute right-1.5 top-1.5 z-20 grid h-6 w-6 place-items-center rounded border border-[var(--line)] bg-[var(--surface-2)] font-mono text-xs text-[var(--ink-dim)] hover:border-[var(--idle)] hover:text-[var(--ink)]"

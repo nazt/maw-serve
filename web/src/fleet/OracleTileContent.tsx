@@ -6,6 +6,10 @@ export interface OracleTileContentProps {
   className?: string;
 }
 
+export function oracleHasConnectAffordance(item: OracleTileItem): boolean {
+  return item.data.density !== "compact";
+}
+
 const STATUS_COLOR: Record<OracleStatus, string> = {
   active: "var(--active, oklch(0.85 0.19 155))",
   idle: "var(--idle, oklch(0.80 0.10 210))",
