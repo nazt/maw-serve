@@ -2,6 +2,7 @@ import type { BoardItem } from "./boardItems";
 import type { TerminalTileItem } from "./TerminalTile";
 
 export const BOARD_STORAGE_KEY = "stoa.board.v1";
+export const DEFAULT_BOARD_PAGE_ID = "fleet";
 export const MAX_PERSISTED_IMAGE_BYTES = 600_000;
 export const MAX_BOARD_STORAGE_BYTES = 3_500_000;
 
@@ -43,6 +44,10 @@ const EMPTY_BOARD_STATE: LoadedBoardState = {
   canvas: { center: [0, 0], zoom: 1 },
   restored: false,
 };
+
+export function boardPageStorageKey(pageId: string): string {
+  return `${BOARD_STORAGE_KEY}.page.${encodeURIComponent(pageId)}`;
+}
 
 function finite(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
@@ -151,11 +156,15 @@ function localStorageAvailable(): boolean {
   }
 }
 
-export function loadBoardState(): LoadedBoardState {
+export function loadBoardState(pageId = DEFAULT_BOARD_PAGE_ID): LoadedBoardState {
   if (!localStorageAvailable()) return EMPTY_BOARD_STATE;
 
   try {
-    const raw = window.localStorage.getItem(BOARD_STORAGE_KEY);
+    const raw = window.localStorage.getItem(boardPageStorageKey(pageId)) ?? (
+      pageId === DEFAULT_BOARD_PAGE_ID
+        ? window.localStorage.getItem(BOARD_STORAGE_KEY)
+        : null
+    );
     if (!raw) return EMPTY_BOARD_STATE;
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     if (parsed.version !== 1) return EMPTY_BOARD_STATE;
@@ -184,7 +193,10 @@ export function loadBoardState(): LoadedBoardState {
   }
 }
 
-export function saveBoardState(state: PersistedBoardState): SaveBoardResult {
+export function saveBoardState(
+  state: PersistedBoardState,
+  pageId = DEFAULT_BOARD_PAGE_ID,
+): SaveBoardResult {
   if (!localStorageAvailable()) {
     return { saved: false, skippedImages: 0, error: "Layout storage is unavailable" };
   }
@@ -213,7 +225,10 @@ export function saveBoardState(state: PersistedBoardState): SaveBoardResult {
   }
 
   try {
-    window.localStorage.setItem(BOARD_STORAGE_KEY, serialized);
+    window.localStorage.setItem(boardPageStorageKey(pageId), serialized);
+    if (pageId === DEFAULT_BOARD_PAGE_ID) {
+      window.localStorage.removeItem(BOARD_STORAGE_KEY);
+    }
     return { saved: true, skippedImages, error: null };
   } catch {
     return {
@@ -224,10 +239,13 @@ export function saveBoardState(state: PersistedBoardState): SaveBoardResult {
   }
 }
 
-export function clearBoardState(): void {
+export function clearBoardState(pageId = DEFAULT_BOARD_PAGE_ID): void {
   if (!localStorageAvailable()) return;
   try {
-    window.localStorage.removeItem(BOARD_STORAGE_KEY);
+    window.localStorage.removeItem(boardPageStorageKey(pageId));
+    if (pageId === DEFAULT_BOARD_PAGE_ID) {
+      window.localStorage.removeItem(BOARD_STORAGE_KEY);
+    }
   } catch {
     // Storage may be disabled; the in-memory reset still succeeds.
   }
