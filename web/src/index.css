@@ -20,6 +20,12 @@
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco,
     Consolas, "Liberation Mono", monospace;
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --z-canvas-ui: 12;
+  --z-header: 40;
+  --z-header-control: 48;
+  --z-modal: 100;
+  --palette-launcher-width: 10.75rem;
+  --palette-launcher-gap: 0.5rem;
 }
 
 @layer base {
@@ -938,16 +944,22 @@
 }
 
 /* Command surface: quiet observatory chrome, content stays terminal-forward. */
+[data-page-id]:has(> .palette-launcher) > header:has(> nav[aria-label="Board pages"]) {
+  width: calc(100vw - 1.5rem);
+  padding-inline-end: calc(var(--palette-launcher-width) + var(--palette-launcher-gap));
+  z-index: var(--z-header);
+}
+
 .palette-launcher {
   position: fixed;
-  z-index: 48;
+  z-index: var(--z-header-control);
   top: 0.75rem;
-  left: 50%;
+  right: 0.75rem;
   display: inline-flex;
+  width: var(--palette-launcher-width);
   min-height: 2.25rem;
   align-items: center;
   gap: 0.55rem;
-  transform: translateX(-50%);
   border: 1px solid oklch(var(--line-channels) / 0.9);
   border-radius: 999px;
   background: oklch(var(--surface-channels) / 0.92);
@@ -978,7 +990,7 @@
 
 .palette-backdrop {
   position: fixed;
-  z-index: 100;
+  z-index: var(--z-modal);
   inset: 0;
   display: grid;
   place-items: start center;
@@ -1158,7 +1170,7 @@
 .command-palette > footer { display: flex; flex-wrap: wrap; align-items: center; gap: 0.8rem; min-height: 2.25rem; border-top: 1px solid var(--line); padding: 0.35rem 0.75rem; color: var(--ink-faint); font-family: var(--font-mono); font-size: 0.57rem; }
 .command-palette > footer kbd { color: var(--ink-dim); }
 
-.palette-hero { position: fixed; z-index: 12; top: 50%; left: 50%; width: min(28rem, calc(100vw - 2rem)); transform: translate(-50%, -50%); text-align: center; }
+.palette-hero { position: fixed; z-index: var(--z-canvas-ui); top: 50%; left: 50%; width: min(28rem, calc(100vw - 2rem)); transform: translate(-50%, -50%); text-align: center; }
 .palette-hero > p { color: var(--ink-faint); font-family: var(--font-mono); font-size: 0.65rem; letter-spacing: 0.09em; text-transform: uppercase; }
 .palette-hero h2 { margin-top: 0.35rem; color: var(--ink); font-size: clamp(1.5rem, 3vw, 2.4rem); font-weight: 620; letter-spacing: -0.04em; }
 .palette-hero button { margin-top: 1rem; border: 1px solid oklch(var(--idle-channels) / 0.35); border-radius: 999px; background: var(--surface); padding: 0.55rem 0.9rem; color: var(--ink-dim); font-family: var(--font-mono); font-size: 0.68rem; }
@@ -1176,6 +1188,9 @@
 }
 
 @media (max-width: 48rem) {
+  :root { --palette-launcher-width: 2.75rem; }
+  .palette-launcher { justify-content: center; gap: 0; padding-inline: 0.35rem; }
+  .palette-launcher > span:last-child { display: none; }
   .command-palette__body { grid-template-columns: 1fr; }
   .palette-list { max-height: 44vh; border-right: 0; }
   .palette-preview { display: none; }
