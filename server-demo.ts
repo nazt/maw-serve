@@ -29,6 +29,7 @@ const LINK_BODY_MAX_BYTES = 4_096;
 const LINK_RATE_WINDOW_MS = 60_000;
 const LINK_RATE_DEBOUNCE_MS = 1_500;
 const LINK_RATE_MAX_PER_WINDOW = 10;
+const LINK_PAIR_STATE_TTL_MS = 60 * 60_000;
 
 const CONTENT_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -283,29 +284,45 @@ interface BoardLinkRateResult {
 
 export class BoardLinkRateLimiter {
   private readonly attempts = new Map<string, number[]>();
-  private readonly pairStates = new Map<string, "connecting" | "connected">();
+  private readonly pairStates = new Map<
+    string,
+    { status: "connecting" | "connected"; touchedAt: number }
+  >();
 
   constructor(
     private readonly windowMs = LINK_RATE_WINDOW_MS,
     private readonly debounceMs = LINK_RATE_DEBOUNCE_MS,
     private readonly maxPerWindow = LINK_RATE_MAX_PER_WINDOW,
+    private readonly pairStateTtlMs = LINK_PAIR_STATE_TTL_MS,
   ) {}
 
   private pairKey(from: string, to: string): string {
     return [from, to].sort().join("\0");
   }
 
-  beginConnect(from: string, to: string): boolean {
+  private evictExpiredPairStates(now: number): void {
+    const cutoff = now - this.pairStateTtlMs;
+    for (const [key, state] of this.pairStates) {
+      if (state.touchedAt <= cutoff) this.pairStates.delete(key);
+    }
+  }
+
+  beginConnect(from: string, to: string, now = Date.now()): boolean {
+    this.evictExpiredPairStates(now);
     const key = this.pairKey(from, to);
-    if (this.pairStates.has(key)) return false;
-    this.pairStates.set(key, "connecting");
+    const existing = this.pairStates.get(key);
+    if (existing) {
+      existing.touchedAt = now;
+      return false;
+    }
+    this.pairStates.set(key, { status: "connecting", touchedAt: now });
     return true;
   }
 
-  finishConnect(from: string, to: string, connected: boolean): void {
+  finishConnect(from: string, to: string, connected: boolean, now = Date.now()): void {
     const key = this.pairKey(from, to);
-    if (this.pairStates.get(key) !== "connecting") return;
-    if (connected) this.pairStates.set(key, "connected");
+    if (this.pairStates.get(key)?.status !== "connecting") return;
+    if (connected) this.pairStates.set(key, { status: "connected", touchedAt: now });
     else this.pairStates.delete(key);
   }
 
@@ -468,7 +485,8 @@ export async function linkResponse(
   }
 
   const limiter = dependencies.limiter ?? boardLinkRateLimiter;
-  if (payload.action === "connect" && !limiter.beginConnect(payload.from, payload.to)) {
+  const now = (dependencies.now ?? Date.now)();
+  if (payload.action === "connect" && !limiter.beginConnect(payload.from, payload.to, now)) {
     (dependencies.logger ?? console).info(
       `[board-link] connect ${payload.from} ↔ ${payload.to}; already connected`,
     );
@@ -476,9 +494,9 @@ export async function linkResponse(
   }
   if (payload.action === "disconnect") limiter.disconnect(payload.from, payload.to);
 
-  const rate = limiter.take(payload.from, payload.to, (dependencies.now ?? Date.now)());
+  const rate = limiter.take(payload.from, payload.to, now);
   if (!rate.ok) {
-    if (payload.action === "connect") limiter.finishConnect(payload.from, payload.to, false);
+    if (payload.action === "connect") limiter.finishConnect(payload.from, payload.to, false, now);
     return Response.json(
       { error: "link notification rate limit exceeded" },
       { status: 429, headers: { "retry-after": String(Math.max(1, Math.ceil(rate.retryAfterMs / 1_000))) } },
@@ -496,11 +514,11 @@ export async function linkResponse(
   const sent = results.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
   const failures = results.filter((result) => result.status === "rejected");
   if (failures.length > 0) {
-    if (payload.action === "connect") limiter.finishConnect(payload.from, payload.to, false);
+    if (payload.action === "connect") limiter.finishConnect(payload.from, payload.to, false, now);
     for (const failure of failures) logger.error("[board-link] maw hey failed", failure.reason);
     return Response.json({ ok: false, sent }, { status: 502 });
   }
-  if (payload.action === "connect") limiter.finishConnect(payload.from, payload.to, true);
+  if (payload.action === "connect") limiter.finishConnect(payload.from, payload.to, true, now);
   return Response.json({ ok: true, sent });
 }
 
