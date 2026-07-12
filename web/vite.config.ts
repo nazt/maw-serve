@@ -5,7 +5,7 @@ import react from "@vitejs/plugin-react";
 
 import { resolveBuildIdentity, type StoaBuildIdentity } from "../build-identity";
 
-const STOA_DEV_PORT = 48_901;
+const STOA_DEV_PORT = 48_903;
 const repoRoot = fileURLToPath(new URL("../", import.meta.url));
 
 function buildIdentityAsset(identity: StoaBuildIdentity): Plugin {

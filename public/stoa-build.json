@@ -1,6 +1,6 @@
 {
-  "branch": "agents/stoa-palette-infra",
-  "commit": "be3cc47",
-  "builder": "stoa-topo",
-  "buildTime": "2026-07-12T11:39:33.733Z"
+  "branch": "agents/stoa-palette-ui",
+  "commit": "65e2452",
+  "builder": "stoa-shell",
+  "buildTime": "2026-07-12T11:50:32.994Z"
 }
