@@ -8,6 +8,7 @@ import {
 } from "react";
 
 import { apiFetch, apiUrlWithParams, API_ENDPOINTS } from "../clients/api";
+import { requestLease, STREAM_PRIORITY, type StreamLeaseMode } from "./streamLease";
 import {
   loadPaletteFrecency,
   rankPaletteItems,
@@ -16,6 +17,8 @@ import {
   type OraclePaletteItem,
   type PaletteItem,
   type PaletteKind,
+  type PeerPaletteItem,
+  type PeerTrust,
   type SpacePaletteItem,
 } from "./paletteIndex";
 
@@ -23,18 +26,33 @@ interface CommandPaletteProps {
   items: readonly PaletteItem[];
   onCommitOracle: (item: OraclePaletteItem) => void | Promise<void>;
   onCommitSpace: (item: SpacePaletteItem) => void | Promise<void>;
+  onCommitPeer?: (item: PeerPaletteItem) => void | Promise<void>;
   emptyBoard?: boolean;
 }
 
-type PreviewState =
-  | { status: "idle"; text: string }
-  | { status: "loading"; text: string }
-  | { status: "ready"; text: string }
-  | { status: "error"; text: string };
+type PreviewStatus = "idle" | "loading" | "ready" | "error";
+type PreviewTransport = "snapshot" | "live";
+
+interface PreviewState {
+  status: PreviewStatus;
+  transport: PreviewTransport;
+  text: string;
+  updatedAt: number | null;
+}
 
 const PREVIEW_DEBOUNCE_MS = 150;
+const PREVIEW_DWELL_MS = 300;
 const PREVIEW_POLL_MS = 2_000;
 const MAX_RESULTS_PER_SECTION = 40;
+const MAX_STREAM_PREVIEW_CHARS = 28_000;
+const MAX_SPACE_THUMBNAIL_WINDOWS = 8;
+
+const TRUST_LABEL: Record<PeerTrust, string> = {
+  fleet: "◆ fleet",
+  paired: "⬡ paired",
+  new: "○ new",
+  "key-changed": "⚠ key changed",
+};
 
 function captureText(payload: unknown): string {
   if (typeof payload === "string") return payload;
@@ -65,32 +83,138 @@ async function readPreview(item: OraclePaletteItem, signal: AbortSignal): Promis
     : response.text();
 }
 
+function plainTerminalText(value: string): string {
+  return value
+    .replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, "")
+    .replace(/\x1b(?:[@-_]|\[[0-?]*[ -/]*[@-~])/g, "")
+    .replace(/\r(?!\n)/g, "")
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "");
+}
+
+function appendPreviewFrame(current: string, frame: string): string {
+  const next = `${current}${plainTerminalText(frame)}`;
+  return next.length > MAX_STREAM_PREVIEW_CHARS
+    ? next.slice(-MAX_STREAM_PREVIEW_CHARS)
+    : next;
+}
+
+function updatedAgo(updatedAt: number | null, now: number): string {
+  if (!updatedAt) return "waiting";
+  const seconds = Math.max(0, Math.floor((now - updatedAt) / 1_000));
+  return `updated ${seconds}s ago`;
+}
+
+function layoutStyle(item: SpacePaletteItem, index: number) {
+  const geometry = item.layout[index]?.geometry;
+  if (!geometry) return undefined;
+  const frame = item.display.frame;
+  return {
+    left: `${(geometry.x / Math.max(1, frame.w)) * 100}%`,
+    top: `${(geometry.y / Math.max(1, frame.h)) * 100}%`,
+    width: `${(geometry.w / Math.max(1, frame.w)) * 100}%`,
+    height: `${(geometry.h / Math.max(1, frame.h)) * 100}%`,
+  };
+}
+
 function optionId(item: PaletteItem): string {
   return `stoa-palette-option-${item.id.replace(/[^a-z0-9_-]/gi, "-")}`;
 }
 
 function keyHint(item: PaletteItem): string {
-  return item.kind === "oracle" ? "Enter · pin" : "Enter · review";
+  if (item.kind === "oracle") return "Enter · pin";
+  if (item.kind === "space") return "Enter · review";
+  return "Enter · connect";
 }
 
 function SpaceMiniMap({ item }: { item: SpacePaletteItem }) {
-  const frame = item.display.frame;
+  const visible = item.layout.slice(0, MAX_SPACE_THUMBNAIL_WINDOWS);
+  const hidden = Math.max(0, item.layout.length - visible.length);
   return (
-    <div className="palette-minimap" aria-label={`${item.name} static window map`}>
-      {item.windows.map((window) => (
+    <div className="palette-minimap" aria-label={`${item.name} live topology map`}>
+      {visible.map(({ window }, index) => (
         <span
           key={window.id}
           className="palette-minimap__window"
           data-oracle={window.oracle ? "true" : undefined}
-          style={{
-            left: `${((window.frame.x - frame.x) / Math.max(1, frame.w)) * 100}%`,
-            top: `${((window.frame.y - frame.y) / Math.max(1, frame.h)) * 100}%`,
-            width: `${(window.frame.w / Math.max(1, frame.w)) * 100}%`,
-            height: `${(window.frame.h / Math.max(1, frame.h)) * 100}%`,
-          }}
+          style={layoutStyle(item, index)}
         />
       ))}
+      {hidden > 0 ? (
+        <span
+          aria-label={`${hidden} additional windows`}
+          style={{
+            position: "absolute",
+            right: "0.55rem",
+            bottom: "0.55rem",
+            borderRadius: "999px",
+            background: "var(--surface-2)",
+            padding: "0.18rem 0.42rem",
+            color: "var(--ink-dim)",
+            fontFamily: "var(--font-mono)",
+            fontSize: "0.6rem",
+          }}
+        >
+          +{hidden}
+        </span>
+      ) : null}
     </div>
+  );
+}
+
+function SpaceRowMiniMap({ item }: { item: SpacePaletteItem }) {
+  const visible = item.layout.slice(0, MAX_SPACE_THUMBNAIL_WINDOWS);
+  const hidden = Math.max(0, item.layout.length - visible.length);
+  return (
+    <span
+      aria-hidden="true"
+      title={`${item.layout.length} windows in current topology`}
+      style={{
+        position: "relative",
+        display: "block",
+        width: "2.8rem",
+        height: "1.45rem",
+        flex: "0 0 auto",
+        overflow: "hidden",
+        border: "1px solid var(--line)",
+        borderRadius: "0.24rem",
+        background: "var(--bg)",
+      }}
+    >
+      {visible.map(({ window }, index) => (
+        <span
+          key={window.id}
+          className="palette-minimap__window"
+          data-oracle={window.oracle ? "true" : undefined}
+          style={{ ...layoutStyle(item, index), minWidth: 2, minHeight: 2 }}
+        />
+      ))}
+      {hidden > 0 ? (
+        <span style={{
+          position: "absolute",
+          right: 1,
+          bottom: 0,
+          color: "var(--ink)",
+          fontFamily: "var(--font-mono)",
+          fontSize: "0.42rem",
+          lineHeight: 1,
+        }}>
+          +{hidden}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+function PeerTrustChip({ trust }: { trust: PeerTrust }) {
+  const urgent = trust === "key-changed";
+  return (
+    <span
+      className="palette-option__kind"
+      data-peer-trust={trust}
+      style={urgent ? { color: "var(--error)" } : undefined}
+    >
+      {TRUST_LABEL[trust]}
+    </span>
   );
 }
 
@@ -119,10 +243,15 @@ function ResultRow({
     >
       <span className="palette-option__signal" aria-hidden="true" />
       <span className="palette-option__copy">
-        <strong>{item.name}</strong>
-        <span>{item.path}</span>
+        <strong>{item.kind === "peer" ? item.handle : item.name}</strong>
+        <span>{item.kind === "peer" ? item.fingerprint : item.path}</span>
       </span>
-      <span className="palette-option__kind">{item.kind}</span>
+      <span style={{ display: "flex", alignItems: "center", gap: "0.4rem", alignSelf: "start" }}>
+        {item.kind === "space" ? <SpaceRowMiniMap item={item} /> : null}
+        {item.kind === "peer"
+          ? <PeerTrustChip trust={item.trust} />
+          : <span className="palette-option__kind">{item.kind}</span>}
+      </span>
       <span className="palette-option__hint">{keyHint(item)}</span>
     </div>
   );
@@ -132,6 +261,7 @@ export default function CommandPalette({
   items,
   onCommitOracle,
   onCommitSpace,
+  onCommitPeer,
   emptyBoard = false,
 }: CommandPaletteProps) {
   const [open, setOpen] = useState(false);
@@ -140,8 +270,15 @@ export default function CommandPalette({
   const [preferredKind, setPreferredKind] = useState<PaletteKind | null>(null);
   const [markedIds, setMarkedIds] = useState<Set<string>>(() => new Set());
   const [confirmingSpaceId, setConfirmingSpaceId] = useState<string | null>(null);
+  const [confirmingPeerId, setConfirmingPeerId] = useState<string | null>(null);
   const [frecency, setFrecency] = useState<FrecencyMap>(loadPaletteFrecency);
-  const [preview, setPreview] = useState<PreviewState>({ status: "idle", text: "" });
+  const [preview, setPreview] = useState<PreviewState>({
+    status: "idle",
+    transport: "snapshot",
+    text: "",
+    updatedAt: null,
+  });
+  const [previewNow, setPreviewNow] = useState(Date.now);
   const [announcement, setAnnouncement] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const launcherRef = useRef<HTMLButtonElement>(null);
@@ -159,9 +296,17 @@ export default function CommandPalette({
     () => ranked.filter((item): item is SpacePaletteItem => item.kind === "space").slice(0, MAX_RESULTS_PER_SECTION),
     [ranked],
   );
+  const peers = useMemo(
+    () => ranked.filter((item): item is PeerPaletteItem => item.kind === "peer").slice(0, MAX_RESULTS_PER_SECTION),
+    [ranked],
+  );
   const navigable = useMemo<PaletteItem[]>(() => (
-    preferredKind === "space" ? [...spaces, ...oracles] : [...oracles, ...spaces]
-  ), [oracles, preferredKind, spaces]);
+    preferredKind === "space"
+      ? [...spaces, ...oracles, ...peers]
+      : preferredKind === "peer"
+        ? [...peers, ...oracles, ...spaces]
+        : [...oracles, ...spaces, ...peers]
+  ), [oracles, peers, preferredKind, spaces]);
   const active = navigable.find((item) => item.id === activeId) ?? navigable[0] ?? null;
 
   const show = useCallback((kind: PaletteKind | null = null) => {
@@ -178,8 +323,9 @@ export default function CommandPalette({
     setOpen(false);
     setQuery("");
     setConfirmingSpaceId(null);
+    setConfirmingPeerId(null);
     setMarkedIds(new Set());
-    setPreview({ status: "idle", text: "" });
+    setPreview({ status: "idle", transport: "snapshot", text: "", updatedAt: null });
     window.setTimeout(() => (openerRef.current ?? launcherRef.current)?.focus(), 0);
   }, []);
 
@@ -199,58 +345,177 @@ export default function CommandPalette({
     if (!activeId || !navigable.some((item) => item.id === activeId)) {
       setActiveId(navigable[0]?.id ?? null);
     }
-    setAnnouncement(`${navigable.length} result${navigable.length === 1 ? "" : "s"} · ${oracles.length} oracles · ${spaces.length} spaces`);
-  }, [activeId, navigable, open, oracles.length, preferredKind, spaces.length]);
+    setAnnouncement(`${navigable.length} result${navigable.length === 1 ? "" : "s"} · ${oracles.length} oracles · ${spaces.length} spaces · ${peers.length} peers`);
+  }, [activeId, navigable, open, oracles.length, peers.length, preferredKind, spaces.length]);
+
+  useEffect(() => {
+    if (!open) return;
+    setPreviewNow(Date.now());
+    const clock = window.setInterval(() => setPreviewNow(Date.now()), 1_000);
+    return () => window.clearInterval(clock);
+  }, [open]);
 
   useEffect(() => {
     if (!open || active?.kind !== "oracle") {
-      setPreview({ status: "idle", text: "" });
+      setPreview({ status: "idle", transport: "snapshot", text: "", updatedAt: null });
       return;
     }
+    setPreview({ status: "loading", transport: "snapshot", text: "", updatedAt: null });
     let stopped = false;
-    let interval: number | null = null;
+    let pollInterval: number | null = null;
     let controller: AbortController | null = null;
+    let eventSource: EventSource | null = null;
+    let releaseLease: (() => void) | null = null;
+
+    const stopPolling = () => {
+      if (pollInterval !== null) window.clearInterval(pollInterval);
+      pollInterval = null;
+      controller?.abort();
+      controller = null;
+    };
+
     const poll = async () => {
       controller?.abort();
-      controller = new AbortController();
-      setPreview((current) => current.status === "ready" ? current : { status: "loading", text: "" });
+      const request = new AbortController();
+      controller = request;
+      setPreview((current) => current.status === "ready" ? current : {
+        status: "loading",
+        transport: "snapshot",
+        text: "",
+        updatedAt: current.updatedAt,
+      });
       try {
-        const text = await readPreview(active, controller.signal);
+        const text = await readPreview(active, request.signal);
         if (stopped) return;
-        setPreview({ status: "ready", text: text || "(empty pane)" });
-        setAnnouncement("Preview ready · using 2s capture fallback");
+        setPreview({
+          status: "ready",
+          transport: "snapshot",
+          text: plainTerminalText(text) || "(empty pane)",
+          updatedAt: Date.now(),
+        });
+        setAnnouncement("Snapshot ready · dwelling upgrades one reserved preview stream");
       } catch (cause) {
-        if (stopped || controller.signal.aborted) return;
+        if (stopped || request.signal.aborted) return;
         setPreview({
           status: "error",
+          transport: "snapshot",
           text: cause instanceof Error ? cause.message : "Preview unavailable",
+          updatedAt: null,
         });
         setAnnouncement("Preview unavailable · pin remains available");
       }
     };
-    const debounce = window.setTimeout(() => {
+
+    const startPolling = () => {
+      if (stopped || pollInterval !== null) return;
       void poll();
-      interval = window.setInterval(() => void poll(), PREVIEW_POLL_MS);
+      pollInterval = window.setInterval(() => void poll(), PREVIEW_POLL_MS);
+    };
+
+    const stopStream = () => {
+      eventSource?.close();
+      eventSource = null;
+    };
+
+    const startStream = () => {
+      if (stopped || eventSource) return;
+      if (!("EventSource" in window)) {
+        releaseLease?.();
+        releaseLease = null;
+        startPolling();
+        return;
+      }
+      stopPolling();
+      eventSource = new EventSource(apiUrlWithParams(API_ENDPOINTS.stream, new URLSearchParams({
+        session: active.session,
+        window: active.window,
+        lines: "80",
+      })));
+      const receiveFrame = (event: MessageEvent<string>, reset: boolean) => {
+        if (stopped) return;
+        setPreview((current) => ({
+          status: "ready",
+          transport: "live",
+          text: reset
+            ? plainTerminalText(event.data) || "(empty pane)"
+            : appendPreviewFrame(current.text, event.data),
+          updatedAt: Date.now(),
+        }));
+        setAnnouncement("Live preview ready · reserved preview stream active");
+      };
+      eventSource.addEventListener("snapshot", (event) => {
+        receiveFrame(event as MessageEvent<string>, true);
+      });
+      eventSource.onmessage = (event) => receiveFrame(event, false);
+      eventSource.onerror = () => {
+        if (stopped) return;
+        stopStream();
+        releaseLease?.();
+        releaseLease = null;
+        setAnnouncement("Live preview fell back to the 2s snapshot");
+        startPolling();
+      };
+    };
+
+    const debounce = window.setTimeout(() => {
+      startPolling();
     }, PREVIEW_DEBOUNCE_MS);
+    const dwell = window.setTimeout(() => {
+      const lease = requestLease(`${active.session}:${active.window}`, {
+        priority: STREAM_PRIORITY.focused,
+        lane: "preview",
+      });
+      const syncMode = (mode: StreamLeaseMode) => {
+        if (mode === "stream") startStream();
+        else {
+          stopStream();
+          startPolling();
+        }
+      };
+      const unsubscribe = lease.subscribe(syncMode);
+      releaseLease = () => {
+        unsubscribe();
+        lease.release();
+      };
+      syncMode(lease.mode);
+    }, PREVIEW_DWELL_MS);
+
     return () => {
       stopped = true;
       window.clearTimeout(debounce);
-      if (interval !== null) window.clearInterval(interval);
-      controller?.abort();
+      window.clearTimeout(dwell);
+      stopPolling();
+      stopStream();
+      releaseLease?.();
     };
-  }, [active, open]);
+  }, [active?.id, active?.kind, active?.kind === "oracle" ? active.session : null, active?.kind === "oracle" ? active.window : null, open]);
 
   const commit = useCallback(async (item: PaletteItem) => {
     if (item.kind === "space" && confirmingSpaceId !== item.id) {
+      setConfirmingPeerId(null);
       setConfirmingSpaceId(item.id);
       setAnnouncement(`${item.liveCount} live and ${item.pollCount} poll. Confirm pull.`);
       return;
     }
+    if (item.kind === "peer" && confirmingPeerId !== item.id) {
+      setConfirmingSpaceId(null);
+      setConfirmingPeerId(item.id);
+      setAnnouncement(`Confirm connection request to ${item.handle}. No peer content is previewed before consent.`);
+      return;
+    }
     setFrecency(recordPaletteFocus(item.id));
     if (item.kind === "oracle") await onCommitOracle(item);
-    else await onCommitSpace(item);
+    else if (item.kind === "space") await onCommitSpace(item);
+    else if (onCommitPeer) await onCommitPeer(item);
+    else window.dispatchEvent(new CustomEvent("p2p-request", {
+      detail: {
+        handle: item.handle,
+        fingerprint: item.fingerprint,
+        trust: item.trust,
+      },
+    }));
     close();
-  }, [close, confirmingSpaceId, onCommitOracle, onCommitSpace]);
+  }, [close, confirmingPeerId, confirmingSpaceId, onCommitOracle, onCommitPeer, onCommitSpace]);
 
   const move = useCallback((delta: number, kind?: PaletteKind) => {
     const source = kind ? navigable.filter((item) => item.kind === kind) : navigable;
@@ -258,11 +523,16 @@ export default function CommandPalette({
     const index = source.findIndex((item) => item.id === active?.id);
     const next = source[(index + delta + source.length) % source.length];
     setConfirmingSpaceId(null);
+    setConfirmingPeerId(null);
     setActiveId(next.id);
     document.getElementById(optionId(next))?.scrollIntoView({ block: "nearest" });
   }, [active?.id, navigable]);
 
   const peelEscape = useCallback(() => {
+    if (confirmingPeerId) {
+      setConfirmingPeerId(null);
+      return;
+    }
     if (confirmingSpaceId) {
       setConfirmingSpaceId(null);
       return;
@@ -276,7 +546,7 @@ export default function CommandPalette({
       return;
     }
     close();
-  }, [close, confirmingSpaceId, markedIds.size, query]);
+  }, [close, confirmingPeerId, confirmingSpaceId, markedIds.size, query]);
 
   const onInputKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Escape") {
@@ -368,7 +638,7 @@ export default function CommandPalette({
             className="command-palette"
             role="dialog"
             aria-modal="true"
-            aria-label="Search oracles and spaces"
+            aria-label="Search fleet targets"
           >
             <div className="command-palette__search">
               <span aria-hidden="true">⌘K</span>
@@ -379,14 +649,15 @@ export default function CommandPalette({
                 aria-expanded="true"
                 aria-controls="stoa-palette-listbox"
                 aria-activedescendant={active ? optionId(active) : undefined}
-                aria-label="Search oracles and spaces"
+                aria-label="Search fleet targets"
                 autoComplete="off"
                 spellCheck="false"
                 value={query}
-                placeholder="Search an oracle or pull a space…"
+                placeholder="Search an oracle, space, or peer…"
                 onChange={(event) => {
                   setQuery(event.target.value);
                   setConfirmingSpaceId(null);
+                  setConfirmingPeerId(null);
                 }}
                 onKeyDown={onInputKeyDown}
               />
@@ -410,6 +681,7 @@ export default function CommandPalette({
                         active={active?.id === item.id}
                         onHighlight={() => {
                           setConfirmingSpaceId(null);
+                          setConfirmingPeerId(null);
                           setActiveId(item.id);
                         }}
                         onCommit={() => void commit(item)}
@@ -427,6 +699,25 @@ export default function CommandPalette({
                         active={active?.id === item.id}
                         onHighlight={() => {
                           setConfirmingSpaceId(null);
+                          setConfirmingPeerId(null);
+                          setActiveId(item.id);
+                        }}
+                        onCommit={() => void commit(item)}
+                      />
+                    ))}
+                  </section>
+                ) : null}
+                {peers.length > 0 ? (
+                  <section role="group" aria-labelledby="palette-peers-label">
+                    <h3 id="palette-peers-label">Peers <span>identity only · {peers.length}</span></h3>
+                    {peers.map((item) => (
+                      <ResultRow
+                        key={item.id}
+                        item={item}
+                        active={active?.id === item.id}
+                        onHighlight={() => {
+                          setConfirmingSpaceId(null);
+                          setConfirmingPeerId(null);
                           setActiveId(item.id);
                         }}
                         onCommit={() => void commit(item)}
@@ -441,25 +732,77 @@ export default function CommandPalette({
                   <>
                     <header>
                       <div><strong>{active.name}</strong><span>{active.path}</span></div>
-                      <span data-preview-status={preview.status}>poll · 2s</span>
+                      <span data-preview-status={preview.transport === "live" ? "ready" : preview.status}>
+                        {preview.transport === "live" ? "● LIVE" : "◌ snapshot"}
+                      </span>
                     </header>
-                    <pre data-state={preview.status}>{preview.status === "loading" ? "Acquiring redacted pane snapshot…" : preview.text}</pre>
-                    <p>Peek uses capture polling · no stream lease</p>
+                    <pre data-state={preview.status}>
+                      {preview.status === "loading" ? "Acquiring redacted pane snapshot…" : preview.text}
+                      {preview.transport === "live" ? (
+                        <span
+                          aria-hidden="true"
+                          style={{ animation: "terminal-live-pulse 1.2s ease-in-out infinite" }}
+                        >
+                          ▌
+                        </span>
+                      ) : null}
+                    </pre>
+                    <p>
+                      {updatedAgo(preview.updatedAt, previewNow)} · {preview.transport === "live"
+                        ? "reserved preview stream"
+                        : "redacted 2s capture"}
+                    </p>
                   </>
                 ) : active?.kind === "space" ? (
                   <>
                     <header>
                       <div><strong>{active.name}</strong><span>{active.path}</span></div>
-                      <span>static map</span>
+                      <span>live topology</span>
                     </header>
                     <SpaceMiniMap item={active} />
-                    <p>{active.oracleNames.length} oracle panes · zero preview streams</p>
+                    <p>{active.layout.length} windows · {active.oracleNames.length} oracle panes · zero preview streams</p>
                     {confirmingSpaceId === active.id ? (
                       <div className="palette-confirm" role="alert">
-                        <strong>{active.liveCount} live / {active.pollCount} poll — pull?</strong>
+                        <strong>
+                          {active.name.toLowerCase()} — {active.liveCount + active.pollCount} terminals · pull {active.liveCount} live + {active.pollCount} polled?
+                        </strong>
                         <span>
                           <button type="button" onClick={() => void commit(active)}>Pull space</button>
                           <button type="button" onClick={() => setConfirmingSpaceId(null)}>Cancel</button>
+                        </span>
+                      </div>
+                    ) : null}
+                  </>
+                ) : active?.kind === "peer" ? (
+                  <>
+                    <header>
+                      <div><strong>{active.handle}</strong><span>{active.fingerprint}</span></div>
+                      <PeerTrustChip trust={active.trust} />
+                    </header>
+                    <div
+                      className="palette-minimap"
+                      aria-label={`${active.handle} peer identity; preview disabled before consent`}
+                      style={{ display: "grid", placeItems: "center", padding: "2rem" }}
+                    >
+                      <div style={{ maxWidth: "24rem", textAlign: "center" }}>
+                        <strong style={{ display: "block", fontSize: "0.9rem" }}>
+                          {active.trust === "new"
+                            ? "🔒 not paired — connect to request access"
+                            : active.trust === "key-changed"
+                              ? "⚠ identity key changed — verify before reconnecting"
+                              : "Identity verified · content remains private until consent"}
+                        </strong>
+                        <p style={{ marginTop: "0.65rem", color: "var(--ink-dim)", fontFamily: "var(--font-mono)", fontSize: "0.65rem" }}>
+                          Peer PEEK is disabled. No frame or terminal content crosses this trust boundary.
+                        </p>
+                      </div>
+                    </div>
+                    {confirmingPeerId === active.id ? (
+                      <div className="palette-confirm" role="alert">
+                        <strong>Request a read-only connection to {active.handle}?</strong>
+                        <span>
+                          <button type="button" onClick={() => void commit(active)}>Request connection</button>
+                          <button type="button" onClick={() => setConfirmingPeerId(null)}>Cancel</button>
                         </span>
                       </div>
                     ) : null}
@@ -471,7 +814,7 @@ export default function CommandPalette({
             </div>
             <footer>
               <span><kbd>↑↓</kbd> navigate</span>
-              <span><kbd>↵</kbd> pin / pull</span>
+              <span><kbd>↵</kbd> pin / pull / connect</span>
               <span><kbd>F1</kbd> oracle</span>
               <span><kbd>F2</kbd> space</span>
               <span><kbd>esc</kbd> back</span>
