@@ -49,6 +49,8 @@ export type CanvasController = CanvasView & {
   fabricRef: RefObject<HTMLDivElement | null>;
   screenToWorld: (point: PointInput | number, y?: number) => CanvasPoint;
   worldToScreen: (point: PointInput | number, y?: number) => CanvasPoint;
+  zoomBy: (factor: number) => void;
+  zoomTo: (zoom: number) => void;
   fit: (rects?: Iterable<WorldRect>) => void;
   focusOn: (rect: WorldRect, options?: FocusOptions) => void;
   onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void;
@@ -192,33 +194,71 @@ export function useCanvas(options: UseCanvasOptions = {}): CanvasController {
     [baseOffset],
   );
 
+  const viewportCenter = useCallback((): CanvasPoint => {
+    const fabric = fabricRef.current;
+    const bounds = fabric?.getBoundingClientRect();
+    if (bounds) {
+      return {
+        x: bounds.left + bounds.width / 2,
+        y: bounds.top + bounds.height / 2,
+      };
+    }
+
+    const viewport = viewportSize(fabric);
+    return { x: viewport.x / 2, y: viewport.y / 2 };
+  }, []);
+
+  const zoomAround = useCallback(
+    (resolveZoom: (currentZoom: number) => number, pointer = viewportCenter()) => {
+      cancelFocusAnimation();
+      commitView((current) => {
+        const nextZoom = clamp(
+          finite(resolveZoom(current.zoom), current.zoom),
+          MIN_CANVAS_ZOOM,
+          MAX_CANVAS_ZOOM,
+        );
+        if (nextZoom === current.zoom) return current;
+
+        return {
+          center: [
+            current.center[0] + pointer.x * (1 / current.zoom - 1 / nextZoom),
+            current.center[1] + pointer.y * (1 / current.zoom - 1 / nextZoom),
+          ],
+          zoom: nextZoom,
+        };
+      });
+    },
+    [cancelFocusAnimation, commitView, viewportCenter],
+  );
+
+  const zoomBy = useCallback(
+    (factor: number) => {
+      const safeFactor = finite(factor, 1);
+      if (safeFactor <= 0) return;
+      zoomAround((currentZoom) => currentZoom * safeFactor);
+    },
+    [zoomAround],
+  );
+
+  const zoomTo = useCallback(
+    (nextZoom: number) => zoomAround(() => nextZoom),
+    [zoomAround],
+  );
+
   const handleWheel = useCallback(
     (event: WheelEvent) => {
       event.preventDefault();
-      cancelFocusAnimation();
 
       if (event.ctrlKey || event.metaKey) {
-        commitView((current) => {
-          const nextZoom = clamp(
-            (1 - (event.deltaY * 0.618) / 320) * current.zoom,
-            MIN_CANVAS_ZOOM,
-            MAX_CANVAS_ZOOM,
-          );
-
-          if (nextZoom === current.zoom) return current;
-
-          const pointer = readPoint(event, undefined, true);
-          return {
-            center: [
-              current.center[0] + pointer.x * (1 / current.zoom - 1 / nextZoom),
-              current.center[1] + pointer.y * (1 / current.zoom - 1 / nextZoom),
-            ],
-            zoom: nextZoom,
-          };
-        });
+        const pointer = readPoint(event, undefined, true);
+        zoomAround(
+          (currentZoom) => (1 - (event.deltaY * 0.618) / 320) * currentZoom,
+          pointer,
+        );
         return;
       }
 
+      cancelFocusAnimation();
       blurFocusedInput(fabricRef.current);
       commitView((current) => ({
         center: [
@@ -228,7 +268,7 @@ export function useCanvas(options: UseCanvasOptions = {}): CanvasController {
         zoom: current.zoom,
       }));
     },
-    [cancelFocusAnimation, commitView],
+    [cancelFocusAnimation, commitView, zoomAround],
   );
 
   useEffect(() => {
@@ -430,6 +470,8 @@ export function useCanvas(options: UseCanvasOptions = {}): CanvasController {
       fabricRef,
       screenToWorld,
       worldToScreen,
+      zoomBy,
+      zoomTo,
       fit,
       focusOn,
       onPointerDown,
@@ -447,6 +489,8 @@ export function useCanvas(options: UseCanvasOptions = {}): CanvasController {
       screenToWorld,
       view,
       worldToScreen,
+      zoomBy,
+      zoomTo,
     ],
   );
 }

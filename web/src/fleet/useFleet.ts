@@ -74,6 +74,7 @@ export interface TileGeometry {
   y: number;
   w: number;
   h: number;
+  zIndex?: number;
 }
 
 export interface OracleTileData {

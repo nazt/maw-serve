@@ -11,6 +11,7 @@ export interface PersistedGeometry {
   y: number;
   w: number;
   h: number;
+  zIndex?: number;
 }
 
 export interface PersistedCanvasView {
@@ -66,12 +67,14 @@ function geometry(value: unknown): PersistedGeometry | null {
   ) {
     return null;
   }
-  return {
+  const saved: PersistedGeometry = {
     x: candidate.x,
     y: candidate.y,
     w: candidate.w,
     h: candidate.h,
   };
+  if (finite(candidate.zIndex)) saved.zIndex = Math.round(candidate.zIndex);
+  return saved;
 }
 
 function boardItem(value: unknown): PersistedBoardItem | null {

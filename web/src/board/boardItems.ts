@@ -7,6 +7,7 @@ export interface BoardItemGeometry {
   y: number;
   w: number;
   h: number;
+  zIndex?: number;
 }
 
 export interface NoteBoardItem extends BoardItemGeometry {
