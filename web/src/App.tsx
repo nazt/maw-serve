@@ -295,12 +295,16 @@ function BoardItemContent({
 }
 
 const toolbarButtonClass = [
+  "inline-flex",
+  "min-h-11",
+  "items-center",
+  "justify-center",
+  "whitespace-nowrap",
   "rounded-md",
   "border",
   "border-[var(--line)]",
   "bg-[var(--surface)]",
-  "px-2.5",
-  "py-1.5",
+  "px-3",
   "text-xs",
   "font-semibold",
   "text-[var(--ink)]",
@@ -351,10 +355,35 @@ function BoardToolbar({
   addingImage,
 }: BoardToolbarProps) {
   const zoomPercent = `${Math.round(Math.min(2, Math.max(0.35, zoom)) * 100)}%`;
+  const [addOpen, setAddOpen] = useState(false);
+  const addButtonRef = useRef<HTMLButtonElement>(null);
+  const addGroupRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!addOpen) return;
+
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Node && addGroupRef.current?.contains(event.target)) return;
+      setAddOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setAddOpen(false);
+      addButtonRef.current?.focus();
+    };
+
+    window.addEventListener("pointerdown", onPointerDown, true);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown, true);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [addOpen]);
 
   return (
     <div
-      className="fixed bottom-11 left-1/2 z-40 flex max-w-[calc(100vw-1rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-1.5 rounded-lg bg-[var(--surface)] p-1.5 shadow-[0_0_0_1px_var(--line)]"
+      className="fixed bottom-11 left-1/2 z-40 flex w-max max-w-[calc(100vw-1rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-1 rounded-lg bg-[var(--surface)] p-1 shadow-[0_0_0_1px_var(--line)]"
       role="toolbar"
       aria-label="Board controls"
     >
@@ -389,22 +418,53 @@ function BoardToolbar({
         <span aria-hidden="true">⚠ {attentionCount} need attention</span>
         <kbd className="font-mono text-[10px] font-medium text-current">A</kbd>
       </button>
-      <button
-        type="button"
-        className={toolbarButtonClass}
-        onClick={onAddNote}
-        disabled={disabled}
-      >
-        Add note
-      </button>
-      <button
-        type="button"
-        className={toolbarButtonClass}
-        onClick={() => void onAddImage()}
-        disabled={disabled || addingImage}
-      >
-        {addingImage ? "Adding image…" : "Add image"}
-      </button>
+      <div className="relative" ref={addGroupRef}>
+        <button
+          ref={addButtonRef}
+          type="button"
+          className={`${toolbarButtonClass} gap-1.5`}
+          onClick={() => setAddOpen((open) => !open)}
+          disabled={disabled}
+          aria-expanded={addOpen}
+          aria-controls="board-add-actions"
+        >
+          <span className="text-base font-medium leading-none" aria-hidden="true">+</span>
+          <span>{addingImage ? "Adding…" : "Add"}</span>
+          <span className="text-[9px] text-[var(--ink-dim)]" aria-hidden="true">
+            {addOpen ? "▾" : "▴"}
+          </span>
+        </button>
+        {addOpen ? (
+          <div
+            id="board-add-actions"
+            className="absolute bottom-[calc(100%+0.5rem)] left-0 z-50 grid min-w-40 gap-1 rounded-md border border-[var(--line)] bg-[var(--surface)] p-1 shadow-[0_4px_8px_var(--elevation-shadow)]"
+            role="group"
+            aria-label="Add board item"
+          >
+            <button
+              type="button"
+              className={`${toolbarButtonClass} w-full justify-start border-transparent bg-transparent`}
+              onClick={() => {
+                setAddOpen(false);
+                onAddNote();
+              }}
+            >
+              Note
+            </button>
+            <button
+              type="button"
+              className={`${toolbarButtonClass} w-full justify-start border-transparent bg-transparent`}
+              onClick={() => {
+                setAddOpen(false);
+                void onAddImage();
+              }}
+              disabled={addingImage}
+            >
+              {addingImage ? "Adding image…" : "Image"}
+            </button>
+          </div>
+        ) : null}
+      </div>
       <button
         type="button"
         className={toolbarButtonClass}
@@ -415,21 +475,14 @@ function BoardToolbar({
       >
         Fit all
       </button>
-      <button
-        type="button"
-        className={toolbarButtonClass}
-        onClick={onReset}
-      >
-        Reset layout
-      </button>
       <div
-        className="flex h-7 items-stretch overflow-visible rounded-md border border-[var(--line)] bg-[var(--surface)]"
+        className="flex h-11 items-stretch overflow-visible rounded-md border border-[var(--line)] bg-[var(--surface)]"
         role="group"
         aria-label="Canvas zoom"
       >
         <button
           type="button"
-          className="grid min-h-7 min-w-7 place-items-center rounded-l-[5px] text-base leading-none text-[var(--ink)] transition-colors duration-150 hover:bg-[var(--surface-2)] focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--idle)]"
+          className="grid min-h-11 min-w-11 place-items-center rounded-l-[5px] text-base leading-none text-[var(--ink)] transition-colors duration-150 hover:bg-[var(--surface-2)] focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--idle)]"
           onClick={onZoomOut}
           aria-label="Zoom out"
           aria-keyshortcuts="-"
@@ -439,7 +492,7 @@ function BoardToolbar({
         </button>
         <button
           type="button"
-          className="min-h-7 min-w-12 border-x border-[var(--line)] px-1 font-mono text-xs tabular-nums text-[var(--ink-dim)] transition-colors duration-150 hover:bg-[var(--surface-2)] focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--idle)]"
+          className="min-h-11 min-w-14 border-x border-[var(--line)] px-1 font-mono text-xs tabular-nums text-[var(--ink-dim)] transition-colors duration-150 hover:bg-[var(--surface-2)] focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--idle)]"
           onClick={onResetZoom}
           aria-label={`Reset canvas zoom to 100%. Current zoom ${zoomPercent}`}
           aria-keyshortcuts="0"
@@ -449,7 +502,7 @@ function BoardToolbar({
         </button>
         <button
           type="button"
-          className="grid min-h-7 min-w-7 place-items-center rounded-r-[5px] text-base leading-none text-[var(--ink)] transition-colors duration-150 hover:bg-[var(--surface-2)] focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--idle)]"
+          className="grid min-h-11 min-w-11 place-items-center rounded-r-[5px] text-base leading-none text-[var(--ink)] transition-colors duration-150 hover:bg-[var(--surface-2)] focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--idle)]"
           onClick={onZoomIn}
           aria-label="Zoom in"
           aria-keyshortcuts="= +"
@@ -458,6 +511,14 @@ function BoardToolbar({
           +
         </button>
       </div>
+      <span className="mx-0.5 h-7 w-px shrink-0 bg-[var(--line)]" aria-hidden="true" />
+      <button
+        type="button"
+        className={`${toolbarButtonClass} text-[var(--ink-dim)]`}
+        onClick={onReset}
+      >
+        Reset layout
+      </button>
     </div>
   );
 }
