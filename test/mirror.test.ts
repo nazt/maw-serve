@@ -14,6 +14,7 @@ import {
 } from "../web/src/mirror/model";
 import { decodeSpacesFrame } from "../web/src/mirror/useMirror";
 import { normalizeOracleHandle } from "../web/src/fleet/useFleet";
+import { computeSpaceLayout } from "../web/src/mirror/spaceLayout";
 import {
   allocateTerminalBudget,
   terminalPaneKey,
@@ -92,6 +93,19 @@ test("space page ids round-trip and normalized windows recover display-local geo
     { x: 0.25, y: 0.1, w: 0.5, h: 0.4 },
     { frame: { x: -2560, y: 0, w: 2560, h: 1440 } },
   )).toEqual({ x: 640, y: 144, w: 1280, h: 576 });
+});
+
+test("shared space layout preserves display-relative topology for expand and import", () => {
+  const safe = sanitizeSpaceReport(raw);
+  expect(computeSpaceLayout(
+    safe.displays[0],
+    safe.spaces[0],
+    safe.windows,
+  )).toEqual([{
+    id: "space-window:41",
+    window: safe.windows[0],
+    geometry: { x: 0, y: 0, w: 1280, h: 720 },
+  }]);
 });
 
 test("Argus pulse parsing filters probes and applies freshness windows", () => {

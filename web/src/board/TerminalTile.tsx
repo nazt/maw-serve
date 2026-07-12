@@ -6,6 +6,12 @@ import { useEffect, useRef, useState } from "react";
 import { apiFetch, apiUrlWithParams, API_ENDPOINTS } from "../clients/api";
 import type { Theme } from "../theme";
 import {
+  requestLease,
+  STREAM_PRIORITY,
+  type StreamLeaseLane,
+  type StreamLeaseMode,
+} from "./streamLease";
+import {
   DEFAULT_TERMINAL_ZOOM,
   MAX_TERMINAL_ZOOM,
   MIN_TERMINAL_ZOOM,
@@ -39,7 +45,9 @@ export interface TerminalTileProps {
   onClose?: (id: string) => void;
   theme: Theme;
   pollIntervalMs?: number;
-  mode?: "stream" | "poll";
+  streamEligible?: boolean;
+  streamLane?: StreamLeaseLane;
+  streamPriority?: number;
 }
 
 type ConnectionStatus = "connecting" | "live" | "reconnecting" | "polling" | "error";
@@ -196,7 +204,9 @@ export function TerminalTile({
   onClose,
   theme,
   pollIntervalMs = 2_000,
-  mode = "stream",
+  streamEligible = true,
+  streamLane = "working",
+  streamPriority = STREAM_PRIORITY.normal,
 }: TerminalTileProps) {
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
   const [error, setError] = useState<string | null>(null);
@@ -204,6 +214,7 @@ export function TerminalTile({
   const [selectMode, setSelectMode] = useState(false);
   const [temporarySelect, setTemporarySelect] = useState(false);
   const [zoomFactor, setZoomFactor] = useState(() => loadTerminalZoom(item.id));
+  const [transportMode, setTransportMode] = useState<StreamLeaseMode>("poll");
   const frameRef = useRef<HTMLDivElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
@@ -212,6 +223,48 @@ export function TerminalTile({
   const resumeFollowRef = useRef<() => void>(() => {});
   const selecting = selectMode || temporarySelect;
   const zoomPercent = Math.round(zoomFactor * 100);
+
+  useEffect(() => {
+    if (!streamEligible) {
+      setTransportMode("poll");
+      return;
+    }
+
+    const lease = requestLease(`${item.data.session}:${item.data.window}`, {
+      priority: streamPriority,
+      lane: streamLane,
+    });
+    const syncMode = (mode = lease.mode) => setTransportMode(mode);
+    const unsubscribe = lease.subscribe(syncMode);
+    syncMode();
+
+    const frame = frameRef.current;
+    const markHot = () => lease.touch();
+    frame?.addEventListener("pointerdown", markHot);
+    frame?.addEventListener("focusin", markHot);
+
+    let observer: IntersectionObserver | null = null;
+    if (frame && typeof IntersectionObserver !== "undefined") {
+      observer = new IntersectionObserver(([entry]) => {
+        lease.setVisible(Boolean(entry?.isIntersecting && entry.intersectionRatio > 0));
+      });
+      observer.observe(frame);
+    }
+
+    return () => {
+      observer?.disconnect();
+      frame?.removeEventListener("pointerdown", markHot);
+      frame?.removeEventListener("focusin", markHot);
+      unsubscribe();
+      lease.release();
+    };
+  }, [
+    item.data.session,
+    item.data.window,
+    streamEligible,
+    streamLane,
+    streamPriority,
+  ]);
 
   useEffect(() => {
     const stopTemporarySelect = () => setTemporarySelect(false);
@@ -490,7 +543,7 @@ export function TerminalTile({
       };
     };
 
-    if (mode === "poll") startPolling();
+    if (transportMode === "poll") startPolling();
     else startStream();
 
     return () => {
@@ -507,7 +560,7 @@ export function TerminalTile({
       if (terminalRef.current === terminal) terminalRef.current = null;
       terminal.dispose();
     };
-  }, [item.data.session, item.data.window, mode, pollIntervalMs]);
+  }, [item.data.session, item.data.window, pollIntervalMs, transportMode]);
 
   useEffect(() => {
     zoomFactorRef.current = zoomFactor;
@@ -525,7 +578,7 @@ export function TerminalTile({
         selectMode ? "ring-1 ring-inset ring-[var(--idle)]" : ""
       }`}
       data-terminal-select-mode={selectMode ? "select" : "view"}
-      data-terminal-mode={mode}
+      data-terminal-mode={transportMode}
     >
       <header className="flex h-9 shrink-0 items-center gap-2 border-b border-[var(--line)] bg-[var(--terminal-header)] px-2.5 font-mono">
         <span className={`h-1.5 w-1.5 rounded-full ${statusDot(status)}`} aria-hidden="true" />

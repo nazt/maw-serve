@@ -8,6 +8,10 @@ import {
   saveBoardState,
   type PersistedGeometry,
 } from "../board/persist";
+import {
+  STREAM_PRIORITY,
+  WORKING_STREAM_BUDGET,
+} from "../board/streamLease";
 import TerminalTile, { type TerminalTileItem } from "../board/TerminalTile";
 import CanvasContextMenu, { type CanvasMenuAction } from "../canvas/ContextMenu";
 import { Fabric } from "../canvas/Fabric";
@@ -22,10 +26,9 @@ import Tile from "../tiles/Tile";
 import {
   defaultSpaceGrid,
   displayPageId,
-  layoutWindows,
   pulseFreshness,
-  windowGeometry,
 } from "./model";
+import { computeSpaceLayout } from "./spaceLayout";
 import {
   allocateTerminalBudget,
   terminalPaneKey,
@@ -36,7 +39,6 @@ import type {
   MirrorDisplay,
   MirrorReport,
   MirrorSpace,
-  MirrorWindow,
   OraclePulseMap,
 } from "./types";
 import { newestPulseForOracle } from "./useMirror";
@@ -84,25 +86,14 @@ interface GhostTileItem {
 
 interface SpaceTerminalTileItem extends TerminalTileItem {
   geometryId: string;
-  mode: "stream" | "poll";
+  streamEligible: boolean;
+  streamPriority: number;
 }
 
 type SpaceWindowItem = SpaceTerminalTileItem | GhostTileItem;
 type MenuState = { x: number; y: number; id: string | null };
 
 const buttonClass = "min-h-7 rounded-md border border-[var(--line)] bg-[var(--surface)] px-2 font-mono text-xs text-[var(--ink)] hover:bg-[var(--surface-2)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--idle)]";
-
-function realPositionDefaults(
-  display: MirrorDisplay | null,
-  space: MirrorSpace | null,
-  windows: readonly MirrorWindow[],
-): Record<string, PersistedGeometry> {
-  if (!display || !space) return {};
-  return Object.fromEntries(layoutWindows(display, space, windows).map(({ window, rect }, index) => [
-    `space-window:${window.id}`,
-    { ...windowGeometry(rect, display), zIndex: USER_ITEM_MIN_Z + index },
-  ]));
-}
 
 function GhostFrame({ item }: { item: GhostTileItem }) {
   return (
@@ -150,13 +141,15 @@ export default function SpacePageView({
 }: SpacePageViewProps) {
   const [restored] = useState(() => loadBoardState(pageId));
   const layouts = useMemo(
-    () => display && space ? layoutWindows(display, space, report?.windows ?? []) : [],
+    () => display && space ? computeSpaceLayout(display, space, report?.windows ?? []) : [],
     [display, report?.windows, space],
   );
-  const defaults = useMemo(
-    () => realPositionDefaults(display, space, report?.windows ?? []),
-    [display, report?.windows, space],
-  );
+  const defaults = useMemo(() => Object.fromEntries(
+    layouts.map(({ id, geometry }, index) => [
+      id,
+      { ...geometry, zIndex: USER_ITEM_MIN_Z + index },
+    ]),
+  ), [layouts]);
   const [geometry, setGeometry] = useState<Record<string, PersistedGeometry>>(() => (
     Object.keys(restored.fleet).length > 0 ? restored.fleet : defaults
   ));
@@ -191,6 +184,11 @@ export default function SpacePageView({
     return { window, target, paneKey };
   }), [census, layouts]);
 
+  const distinctPaneCount = useMemo(() => new Set(
+    resolved.flatMap(({ paneKey }) => paneKey ? [paneKey] : []),
+  ).size, [resolved]);
+  const streamSlots = Math.min(STREAM_BUDGET, distinctPaneCount, WORKING_STREAM_BUDGET);
+
   const budget = useMemo(() => allocateTerminalBudget(resolved.flatMap(({ window, target, paneKey }) => (
     target && paneKey ? [{
       paneKey,
@@ -202,17 +200,17 @@ export default function SpacePageView({
       status: target.status,
       idleSec: target.idleSec,
     }] : []
-  )), STREAM_BUDGET), [now, pulses, resolved]);
+  )), streamSlots), [now, pulses, resolved, streamSlots]);
 
   const degradedKey = budget.degradedPaneKeys.join(",");
   useEffect(() => {
     if (!degradedKey) return;
     const degradedPaneKeys = degradedKey.split(",");
     console.warn(
-      `[stoa:${pageId}] SSE budget ${STREAM_BUDGET}/${STREAM_BUDGET}; ${degradedPaneKeys.length} panes degraded to poll:`,
+      `[stoa:${pageId}] SSE budget ${streamSlots}/${STREAM_BUDGET}; ${degradedPaneKeys.length} panes degraded to poll:`,
       degradedPaneKeys,
     );
-  }, [degradedKey, pageId]);
+  }, [degradedKey, pageId, streamSlots]);
 
   const items = useMemo<SpaceWindowItem[]>(() => resolved.map(({ window, target, paneKey }) => {
     const id = `space-window:${window.id}`;
@@ -228,7 +226,12 @@ export default function SpacePageView({
           window: target.pane,
           model: modelByOracle.get(normalizeOracleHandle(window.oracle)),
         },
-        mode: budget.streamPaneKeys.has(paneKey) ? "stream" : "poll",
+        streamEligible: budget.streamPaneKeys.has(paneKey),
+        streamPriority: window.focus
+          ? STREAM_PRIORITY.focused
+          : target.status === "active"
+            ? STREAM_PRIORITY.active
+            : STREAM_PRIORITY.normal,
         geometryId: id,
       };
     }
@@ -458,7 +461,12 @@ export default function SpacePageView({
               onCommit={updateItem}
             >
               {item.kind === "terminal" ? (
-                <TerminalTile item={item} theme={theme} mode={item.mode} />
+                <TerminalTile
+                  item={item}
+                  theme={theme}
+                  streamEligible={item.streamEligible}
+                  streamPriority={item.streamPriority}
+                />
               ) : (
                 <GhostFrame item={item} />
               )}

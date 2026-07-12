@@ -241,6 +241,32 @@ function BoardItemContent({ item, onNoteChange, onClose }: BoardItemContentProps
     return <NoteTileContent item={item} onChange={onNoteChange} />;
   }
 
+  if (item.kind === "space-import") {
+    return (
+      <section className="flex h-full flex-col overflow-hidden rounded-md border border-[var(--line)] bg-[var(--surface)] font-mono">
+        <header className="flex h-9 items-center gap-2 border-b border-[var(--line)] px-2.5 text-xs">
+          <strong className="min-w-0 flex-1 truncate">
+            space {item.spaceRef.spaceIndex}
+          </strong>
+          <span className="text-[10px] text-[var(--ink-dim)]">
+            {item.members.length} windows
+          </span>
+          <button
+            type="button"
+            className="grid h-6 w-6 place-items-center rounded text-[var(--ink-dim)] hover:bg-[var(--surface-2)] hover:text-[var(--ink)]"
+            aria-label={`Remove imported space ${item.spaceRef.spaceIndex}`}
+            onClick={() => onClose(item.id)}
+          >
+            ×
+          </button>
+        </header>
+        <div className="grid min-h-0 flex-1 place-items-center text-[10px] text-[var(--ink-faint)]">
+          space import descriptor
+        </div>
+      </section>
+    );
+  }
+
   return (
     <div className="image-tile group relative h-full overflow-hidden rounded-md border border-[var(--line)] bg-[var(--surface)] p-1.5 shadow-[0_0_12px_oklch(var(--idle-channels)/0.08)]">
       <img
@@ -550,6 +576,10 @@ function tileClassName(item: AppTileItem): string {
 
   if (item.kind === "terminal") {
     return "rounded-md bg-[var(--terminal-surface)]";
+  }
+
+  if (item.kind === "space-import") {
+    return "rounded-md bg-[var(--surface)]";
   }
 
   return [

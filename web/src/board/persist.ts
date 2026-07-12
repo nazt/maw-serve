@@ -3,6 +3,7 @@ import {
   isImageSource,
   type BoardItem,
   type ImageBoardData,
+  type SpaceImportMember,
 } from "./boardItems";
 import type { TerminalTileItem } from "./TerminalTile";
 
@@ -148,6 +149,79 @@ function boardItem(value: unknown): PersistedBoardItem | null {
           : byteLength(data.src),
         mediaType: typeof data.mediaType === "string" ? data.mediaType : "image/webp",
       },
+    };
+  }
+
+  if (candidate.kind === "space-import") {
+    const spaceRef = candidate.spaceRef as Record<string, unknown> | null;
+    if (
+      typeof candidate.groupId !== "string" ||
+      !spaceRef ||
+      !Number.isInteger(spaceRef.displayIndex) ||
+      !Number.isInteger(spaceRef.spaceIndex) ||
+      !Array.isArray(candidate.members) ||
+      typeof candidate.collapsed !== "boolean"
+    ) {
+      return null;
+    }
+
+    const members = candidate.members.flatMap((value): SpaceImportMember[] => {
+      if (!value || typeof value !== "object") return [];
+      const member = value as Record<string, unknown>;
+      const memberGeometry = geometry(member.geometry);
+      const target = member.target as Record<string, unknown> | null;
+      if (
+        typeof member.id !== "string" ||
+        !Number.isInteger(member.windowId) ||
+        (member.kind !== "terminal" && member.kind !== "ghost") ||
+        (member.oracle !== null && typeof member.oracle !== "string") ||
+        typeof member.app !== "string" ||
+        !memberGeometry
+      ) {
+        return [];
+      }
+      if (target && (
+        typeof target.session !== "string" ||
+        typeof target.window !== "string"
+      )) {
+        return [];
+      }
+      return [{
+        id: member.id,
+        windowId: member.windowId as number,
+        kind: member.kind,
+        oracle: member.oracle as string | null,
+        app: member.app,
+        geometry: {
+          x: memberGeometry.x,
+          y: memberGeometry.y,
+          w: memberGeometry.w,
+          h: memberGeometry.h,
+        },
+        target: target ? {
+          session: target.session as string,
+          window: target.window as string,
+          ...(typeof target.model === "string" ? { model: target.model } : {}),
+        } : null,
+        ...(typeof member.adoptedItemId === "string"
+          ? { adoptedItemId: member.adoptedItemId }
+          : {}),
+      }];
+    });
+    if (members.length !== candidate.members.length) return null;
+
+    return {
+      id: candidate.id,
+      kind: "space-import",
+      data: {},
+      ...itemGeometry,
+      groupId: candidate.groupId,
+      spaceRef: {
+        displayIndex: spaceRef.displayIndex as number,
+        spaceIndex: spaceRef.spaceIndex as number,
+      },
+      members,
+      collapsed: candidate.collapsed,
     };
   }
 
