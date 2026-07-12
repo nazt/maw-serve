@@ -76,6 +76,13 @@ import TerminalTile, {
 import { STREAM_PRIORITY, type StreamLeaseMode } from "./board/streamLease";
 import OracleTileContent from "./fleet/OracleTileContent";
 import StatusBar, { summarizeFleet } from "./fleet/StatusBar";
+import {
+  NodeConnectHandle,
+  NodeEdgeOverlay,
+  useNodeEdgeDrag,
+} from "./graph/NodeEdgeOverlay";
+import { clearNodeEdges } from "./graph/edges";
+import { useNodeEdges } from "./graph/useNodeEdges";
 import type { Theme } from "./theme";
 import { useTheme } from "./useTheme";
 import {
@@ -675,6 +682,8 @@ function BoardPageView({
   const [restoredState] = useState(() => loadBoardState(pageId));
   const [restoredItems] = useState(() => normalizeUserItemZ(restoredState.items));
   const canvas = useCanvas(restoredState.canvas);
+  const nodeGraph = useNodeEdges(pageId);
+  const edgeDrag = useNodeEdgeDrag(nodeGraph.connect);
   const {
     fleetTiles,
     census,
@@ -723,6 +732,9 @@ function BoardPageView({
   const positionedFleetTiles = useMemo<OracleTileItem[]>(() => (
     fleetTiles.map((item) => ({ ...item, ...fleetGeometry[item.id] }))
   ), [fleetGeometry, fleetTiles]);
+  const connectedOracleNames = useMemo(() => new Set(
+    nodeGraph.edges.flatMap((edge) => [edge.from, edge.to]),
+  ), [nodeGraph.edges]);
   const jumpTargets = useMemo<OracleTileItem[]>(() => {
     const byActivity = (left: OracleTileItem, right: OracleTileItem) => (
       finiteIdle(left.data.idleSec) - finiteIdle(right.data.idleSec) ||
@@ -1787,6 +1799,14 @@ function BoardPageView({
           setSelectedOracleId(null);
         }}
       >
+        <NodeEdgeOverlay
+          edges={nodeGraph.edges}
+          nodes={positionedFleetTiles}
+          canvas={canvas}
+          draft={edgeDrag.draft}
+          linkedEdgeId={nodeGraph.linkedEdgeId}
+          onDelete={nodeGraph.disconnect}
+        />
         <BoardState loading={loading} error={error} hasTiles={hasOracleTiles} />
         {dropActive && dropPoint ? (
           <ImageDropGhost
@@ -1835,6 +1855,8 @@ function BoardPageView({
                   }}
                   className="oracle-tile relative h-full"
                   data-attention={item.attention.level}
+                  data-connecting={edgeDrag.draft?.from === item.data.oracle || undefined}
+                  data-node-connect-target={item.data.oracle}
                   title="Double-click to open terminal preview"
                   onPointerDown={(event) => {
                     if (event.button !== 0) return;
@@ -1858,6 +1880,13 @@ function BoardPageView({
                   }}
                 >
                   <OracleTileContent item={item} />
+                  <NodeConnectHandle
+                    nodeId={item.data.oracle}
+                    nodeName={item.data.oracle}
+                    connected={connectedOracleNames.has(item.data.oracle)}
+                    zoom={canvas.zoom}
+                    events={edgeDrag.events}
+                  />
                   {oracleDisplayPages.get(normalizeOracleHandle(item.data.oracle)) ? (
                     <a
                       className="absolute right-1.5 top-1.5 z-20 grid h-6 w-6 place-items-center rounded border border-[var(--line)] bg-[var(--surface-2)] font-mono text-xs text-[var(--ink-dim)] hover:border-[var(--idle)] hover:text-[var(--ink)]"
@@ -1956,7 +1985,7 @@ function BoardPageView({
       {hintState ? (
         <aside className="board-hint" data-state={hintState} role="status">
           <span>
-            double-click an oracle for its live terminal · drag to arrange · Add note/image
+            double-click an oracle for its terminal · drag its edge dot to link · drag to arrange
           </span>
           <button
             type="button"
@@ -1999,13 +2028,13 @@ function BoardPageView({
         disabled={loading && fleetTiles.length === 0}
         addingImage={addingImage}
       />
-      {persistenceWarning ? (
+      {persistenceWarning || nodeGraph.error ? (
         <p
           className="board-toast"
           data-board-toast="warning"
           role="alert"
         >
-          {persistenceWarning}
+          {persistenceWarning ?? nodeGraph.error}
         </p>
       ) : null}
       <StatusBar
@@ -2138,7 +2167,10 @@ export default function App() {
     } else {
       setManualPages((current) => current.filter((candidate) => candidate.id !== targetPageId));
     }
-    window.setTimeout(() => clearBoardState(targetPageId), 0);
+    window.setTimeout(() => {
+      clearBoardState(targetPageId);
+      clearNodeEdges(targetPageId);
+    }, 0);
   }, [navigate, pageId, pages]);
 
   useEffect(() => {
