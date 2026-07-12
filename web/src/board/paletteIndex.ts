@@ -1,7 +1,9 @@
 import { normalizeOracleHandle, type OracleTileItem } from "../fleet/useFleet";
+import { computeSpaceLayout, type SpaceLayoutPosition } from "../mirror/spaceLayout";
 import type { MirrorDisplay, MirrorReport, MirrorSpace, MirrorWindow } from "../mirror/types";
 
-export type PaletteKind = "oracle" | "space";
+export type PaletteKind = "oracle" | "space" | "peer";
+export type PeerTrust = "fleet" | "paired" | "new" | "key-changed";
 
 export interface OraclePaletteItem {
   id: string;
@@ -24,12 +26,32 @@ export interface SpacePaletteItem {
   display: MirrorDisplay;
   space: MirrorSpace;
   windows: MirrorWindow[];
+  layout: SpaceLayoutPosition[];
   oracleNames: string[];
   liveCount: number;
   pollCount: number;
 }
 
-export type PaletteItem = OraclePaletteItem | SpacePaletteItem;
+/** Identity-only by contract: peer rows never carry pane or frame content. */
+export interface PeerIdentity {
+  id?: string;
+  handle: string;
+  fingerprint: string;
+  trust: PeerTrust;
+}
+
+export interface PeerPaletteItem {
+  id: string;
+  kind: "peer";
+  name: string;
+  path: string;
+  searchText: string;
+  handle: string;
+  fingerprint: string;
+  trust: PeerTrust;
+}
+
+export type PaletteItem = OraclePaletteItem | SpacePaletteItem | PeerPaletteItem;
 
 export interface FrecencyEntry {
   count: number;
@@ -43,6 +65,21 @@ export const PALETTE_FRECENCY_STORAGE_KEY = "stoa.palette.frecency.v1";
 function finite(value: unknown, fallback = 0): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+export function peerPaletteItem(peer: PeerIdentity): PeerPaletteItem {
+  const handle = peer.handle.trim();
+  const fingerprint = peer.fingerprint.trim();
+  return {
+    id: peer.id?.trim() || `peer:${fingerprint || handle}`,
+    kind: "peer",
+    name: handle,
+    path: fingerprint,
+    searchText: `${handle} ${fingerprint} ${peer.trust}`,
+    handle,
+    fingerprint,
+    trust: peer.trust,
+  };
 }
 
 export function loadPaletteFrecency(): FrecencyMap {
@@ -113,6 +150,12 @@ function emptyQueryScore(item: PaletteItem, frecency: FrecencyMap, now: number):
   return frequency * recency * 100 + pulse * 8 + active;
 }
 
+function kindOrder(kind: PaletteKind): number {
+  if (kind === "oracle") return 0;
+  if (kind === "space") return 1;
+  return 2;
+}
+
 export function rankPaletteItems(
   items: readonly PaletteItem[],
   query: string,
@@ -127,7 +170,7 @@ export function rankPaletteItems(
     return score === null ? [] : [{ item, score }];
   }).sort((left, right) => (
     right.score - left.score ||
-    Number(left.item.kind === "space") - Number(right.item.kind === "space") ||
+    kindOrder(left.item.kind) - kindOrder(right.item.kind) ||
     left.item.name.localeCompare(right.item.name)
   )).map(({ item }) => item);
 }
@@ -135,6 +178,7 @@ export function rankPaletteItems(
 export function buildPaletteIndex(
   oracles: readonly OraclePaletteItem[],
   report: MirrorReport | null,
+  peers: readonly PeerIdentity[] = [],
 ): PaletteItem[] {
   const terminalOracles = new Set(oracles.map((item) => normalizeOracleHandle(item.name)));
   const spaces: SpacePaletteItem[] = [];
@@ -156,10 +200,11 @@ export function buildPaletteIndex(
       display,
       space,
       windows,
+      layout: computeSpaceLayout(display, space, windows),
       oracleNames,
       liveCount,
       pollCount: Math.max(0, targetCount - liveCount),
     });
   }
-  return [...oracles, ...spaces];
+  return [...oracles, ...spaces, ...peers.map(peerPaletteItem)];
 }
