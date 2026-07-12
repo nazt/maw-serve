@@ -3,6 +3,54 @@ import { expect, test } from "bun:test";
 import { sanitizeCaptureOutput } from "../server-demo";
 import { redactSecrets } from "../src/redact";
 
+const explicitTokenFixtures = [
+  ["GitHub OAuth", ["gho_", "abcdefghijklmnopqrstuvwxyz1234567890"].join("")],
+  ["GitHub user", ["ghu_", "abcdefghijklmnopqrstuvwxyz1234567890"].join("")],
+  ["GitHub server", ["ghs_", "abcdefghijklmnopqrstuvwxyz1234567890"].join("")],
+  ["GitHub refresh", ["ghr_", "abcdefghijklmnopqrstuvwxyz1234567890"].join("")],
+  ["Stripe secret", ["sk", "_live_", "abcdefghijklmnopqrstuvwxyz123456"].join("")],
+  ["Stripe restricted", ["rk", "_live_", "abcdefghijklmnopqrstuvwxyz123456"].join("")],
+  ["Stripe publishable", ["pk", "_live_", "abcdefghijklmnopqrstuvwxyz123456"].join("")],
+  ["Google API", ["AI", "za", "A".repeat(35)].join("")],
+  ["JWT", "eyJheaderfixture.eyJpayloadfixture.signaturefixture"],
+  ["npm", ["npm_", "a".repeat(36)].join("")],
+  ["Slack", ["xoxb-", "abcdefghijklmnopqrstuvwxyz123456"].join("")],
+] as const;
+
+test.each(explicitTokenFixtures)("%s tokens are redacted", (_name, fixture) => {
+  expect(redactSecrets(`token ${fixture}`)).toBe("token [REDACTED_TOKEN]");
+});
+
+test("AWS temporary access-key IDs are redacted", () => {
+  const fixture = ["AS", "IA", "1234567890ABCDEF"].join("");
+  expect(redactSecrets(fixture)).toBe("[REDACTED_ACCESS_KEY]");
+});
+
+test("high-entropy values require a secret-like context", () => {
+  const input = [
+    `key=${"a1".repeat(16)}`,
+    `token: ${"QWxhZGRpbjpvcGVuIHNlc2FtZQ123456"}`,
+    `secret ${"0123456789abcdef".repeat(4)}`,
+  ].join("\n");
+
+  expect(redactSecrets(input)).toBe([
+    "key=[REDACTED]",
+    "token: [REDACTED]",
+    "secret [REDACTED]",
+  ].join("\n"));
+});
+
+test("hashes, colors, and UUIDs pass through without secret context", () => {
+  const input = [
+    "commit 0123456789abcdef0123456789abcdef01234567",
+    "color #aabbcc",
+    "request 123e4567-e89b-12d3-a456-426614174000",
+    `checksum=${"ab".repeat(32)}`,
+  ].join("\n");
+
+  expect(redactSecrets(input)).toBe(input);
+});
+
 test("secret fixtures share stable redaction markers", () => {
   const input = [
     "OPENAI_API_KEY=sk-examplefixture1234567890",
