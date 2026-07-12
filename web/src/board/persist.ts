@@ -1,9 +1,14 @@
-import type { BoardItem } from "./boardItems";
+import {
+  imageSource,
+  isImageSource,
+  type BoardItem,
+  type ImageBoardData,
+} from "./boardItems";
 import type { TerminalTileItem } from "./TerminalTile";
 
 export const BOARD_STORAGE_KEY = "stoa.board.v1";
 export const DEFAULT_BOARD_PAGE_ID = "fleet";
-export const MAX_PERSISTED_IMAGE_BYTES = 600_000;
+export const MAX_PERSISTED_IMAGE_BYTES = 500_000;
 export const MAX_BOARD_STORAGE_BYTES = 3_500_000;
 
 export interface PersistedGeometry {
@@ -100,6 +105,49 @@ function boardItem(value: unknown): PersistedBoardItem | null {
       kind: "image",
       ...itemGeometry,
       data: candidate.data,
+    };
+  }
+
+  if (candidate.kind === "image" && candidate.data && typeof candidate.data === "object") {
+    const data = candidate.data as Partial<ImageBoardData> & Record<string, unknown>;
+    const naturalW = data.naturalW ?? data.naturalWidth;
+    const naturalH = data.naturalH ?? data.naturalHeight;
+    const crop = data.cropRect as unknown;
+    const cropRecord = crop as Record<string, unknown> | null;
+    const cropRect = cropRecord && typeof cropRecord === "object" &&
+        ["x", "y", "w", "h"].every((key) => finite(cropRecord[key])) &&
+        (cropRecord.w as number) > 0 &&
+        (cropRecord.h as number) > 0
+      ? {
+          x: cropRecord.x as number,
+          y: cropRecord.y as number,
+          w: cropRecord.w as number,
+          h: cropRecord.h as number,
+        }
+      : null;
+    if (
+      !isImageSource(data.src) ||
+      !finite(naturalW) ||
+      !finite(naturalH) ||
+      naturalW <= 0 ||
+      naturalH <= 0
+    ) {
+      return null;
+    }
+    return {
+      id: candidate.id,
+      kind: "image",
+      ...itemGeometry,
+      data: {
+        src: data.src,
+        naturalW,
+        naturalH,
+        cropRect,
+        byteLength: finite(data.byteLength)
+          ? data.byteLength
+          : byteLength(data.src),
+        mediaType: typeof data.mediaType === "string" ? data.mediaType : "image/webp",
+      },
     };
   }
 
@@ -208,14 +256,21 @@ export function saveBoardState(
   const items = state.items.filter((item) => {
     if (
       item.kind === "image" &&
-      item.data.startsWith("data:image/") &&
-      byteLength(item.data) > MAX_PERSISTED_IMAGE_BYTES
+      imageSource(item).startsWith("data:image/") &&
+      byteLength(imageSource(item)) > MAX_PERSISTED_IMAGE_BYTES
     ) {
       skippedImages += 1;
       return false;
     }
     return true;
   });
+  if (skippedImages > 0) {
+    return {
+      saved: false,
+      skippedImages,
+      error: "An image is too large to save locally",
+    };
+  }
   const snapshot: PersistedBoardState = { ...state, items };
   const serialized = JSON.stringify(snapshot);
 

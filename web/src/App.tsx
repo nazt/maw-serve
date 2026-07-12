@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 
 import { Fabric } from "./canvas/Fabric";
 import CanvasContextMenu, {
@@ -7,10 +14,16 @@ import CanvasContextMenu, {
 import { useCanvas, type CanvasPoint } from "./canvas/useCanvas";
 import {
   acquireImageSource,
+  clipboardImageBlobs,
   createImageBoardItem,
   createNoteBoardItem,
+  hasSupportedImageData,
+  imageAspectRatio,
+  imageBlobsFromDataTransfer,
   imageElementProps,
+  prepareImageBlob,
   type BoardItem,
+  type BoardPoint,
   type NoteBoardItem,
 } from "./board/boardItems";
 import {
@@ -188,19 +201,32 @@ function NoteTileContent({ item, onChange }: NoteTileContentProps) {
 interface BoardItemContentProps {
   item: BoardItem;
   onNoteChange: (id: string, text: string) => void;
+  onClose: (id: string) => void;
 }
 
-function BoardItemContent({ item, onNoteChange }: BoardItemContentProps) {
+function BoardItemContent({ item, onNoteChange, onClose }: BoardItemContentProps) {
   if (item.kind === "note") {
     return <NoteTileContent item={item} onChange={onNoteChange} />;
   }
 
   return (
-    <div className="h-full overflow-hidden rounded-md border border-[var(--line)] bg-[var(--surface)] p-1.5">
+    <div className="image-tile group relative h-full overflow-hidden rounded-md border border-[var(--line)] bg-[var(--surface)] p-1.5 shadow-[0_0_12px_oklch(var(--idle-channels)/0.08)]">
       <img
         {...imageElementProps(item)}
         className="h-full w-full select-none rounded-sm object-contain"
       />
+      <button
+        type="button"
+        className="image-tile__close"
+        aria-label="Remove board image"
+        title="Remove image"
+        onClick={() => onClose(item.id)}
+      >
+        ×
+      </button>
+      <span className="image-tile__resize-hint" aria-hidden="true">
+        Shift · free resize
+      </span>
     </div>
   );
 }
@@ -398,6 +424,29 @@ function BoardState({ loading, error, hasTiles }: BoardStateProps) {
   );
 }
 
+interface ImageDropGhostProps {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  style?: CSSProperties;
+}
+
+function ImageDropGhost({ style }: ImageDropGhostProps) {
+  return (
+    <div
+      className="image-drop-ghost"
+      data-image-drop-ghost="true"
+      style={style}
+      aria-hidden="true"
+    >
+      <span className="image-drop-ghost__icon">↘</span>
+      <strong>drop image</strong>
+      <span>PNG · JPG · WebP · GIF</span>
+    </div>
+  );
+}
+
 function tileClassName(item: AppTileItem): string {
   if (item.kind === "note") {
     return "rounded-md bg-[oklch(0.29_0.055_75)]";
@@ -504,6 +553,8 @@ function BoardPageView({
   const now = useClock();
   const [addingImage, setAddingImage] = useState(false);
   const [boardMenu, setBoardMenu] = useState<BoardMenuState | null>(null);
+  const [dropActive, setDropActive] = useState(false);
+  const [dropPoint, setDropPoint] = useState<{ x: number; y: number } | null>(null);
   const [hintState, setHintState] = useState<HintState | null>(initialHintState);
   const [layoutEpoch, setLayoutEpoch] = useState(0);
   const [persistenceWarning, setPersistenceWarning] = useState<string | null>(null);
@@ -694,10 +745,46 @@ function BoardPageView({
     setBoardItems((current) => [...current, note]);
   }, [nextUserZ]);
 
+  const addImageBlobs = useCallback(async (
+    blobs: readonly Blob[],
+    center: BoardPoint,
+  ) => {
+    if (blobs.length === 0) return;
+    setAddingImage(true);
+    try {
+      const anchor = Array.isArray(center)
+        ? { x: center[0], y: center[1] }
+        : center as { x: number; y: number };
+      const prepared = [];
+      for (const blob of blobs) {
+        prepared.push(await prepareImageBlob(blob));
+      }
+      const images = prepared.map((source, index) => createImageBoardItem(source, {
+        center: {
+          x: anchor.x + index * 28,
+          y: anchor.y + index * 28,
+        },
+      })).map((image) => ({ ...image, zIndex: nextUserZ() }));
+      setBoardItems((current) => [...current, ...images]);
+      setPersistenceWarning(null);
+    } catch (cause) {
+      setPersistenceWarning(
+        cause instanceof Error ? cause.message : "Image could not be added",
+      );
+    } finally {
+      setAddingImage(false);
+    }
+  }, [nextUserZ]);
+
   const addImageAt = useCallback(async (point: CanvasPoint) => {
     setAddingImage(true);
     try {
-      const source = await acquireImageSource();
+      const blobs = await clipboardImageBlobs();
+      if (blobs.length > 0) {
+        await addImageBlobs(blobs, point);
+        return;
+      }
+      const source = await acquireImageSource({ clipboard: null });
       if (!source) return;
       const image = {
         ...createImageBoardItem(source, { center: point }),
@@ -707,7 +794,7 @@ function BoardPageView({
     } finally {
       setAddingImage(false);
     }
-  }, [nextUserZ]);
+  }, [addImageBlobs, nextUserZ]);
 
   const addNoteAtViewportCenter = useCallback(
     () => addNoteAt(viewportCenter()),
@@ -718,6 +805,25 @@ function BoardPageView({
     () => addImageAt(viewportCenter()),
     [addImageAt, viewportCenter],
   );
+
+  useEffect(() => {
+    const onPaste = (event: ClipboardEvent) => {
+      if (isEditableTarget(event.target)) return;
+      const immediate = imageBlobsFromDataTransfer(event.clipboardData);
+      if (immediate.length > 0) {
+        event.preventDefault();
+        void addImageBlobs(immediate, viewportCenter());
+        return;
+      }
+
+      void clipboardImageBlobs().then((blobs) => {
+        if (blobs.length > 0) void addImageBlobs(blobs, viewportCenter());
+      });
+    };
+
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, [addImageBlobs, viewportCenter]);
 
   const openTerminal = useCallback((oracle: OracleTileItem) => {
     const target = terminalPane(census, oracle);
@@ -926,6 +1032,10 @@ function BoardPageView({
     )));
   }, []);
 
+  const closeBoardItem = useCallback((id: string) => {
+    setBoardItems((current) => current.filter((item) => item.id !== id));
+  }, []);
+
   const closeTerminal = useCallback((id: string) => {
     setTerminalTiles((current) => current.filter((item) => item.id !== id));
   }, []);
@@ -1118,6 +1228,7 @@ function BoardPageView({
         id="board-fabric"
         canvas={canvas}
         className="bg-[var(--bg)]"
+        data-drop-active={dropActive || undefined}
         aria-label="Interactive fleet board"
         aria-busy={loading}
         onContextMenu={(event) => {
@@ -1144,6 +1255,43 @@ function BoardPageView({
             target,
           });
         }}
+        onDragEnter={(event) => {
+          if (!hasSupportedImageData(event.dataTransfer)) return;
+          event.preventDefault();
+          setDropActive(true);
+          setDropPoint(canvas.screenToWorld({
+            clientX: event.clientX,
+            clientY: event.clientY,
+          }));
+        }}
+        onDragOver={(event) => {
+          if (!hasSupportedImageData(event.dataTransfer)) return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "copy";
+          setDropActive(true);
+          setDropPoint(canvas.screenToWorld({
+            clientX: event.clientX,
+            clientY: event.clientY,
+          }));
+        }}
+        onDragLeave={(event) => {
+          const related = event.relatedTarget;
+          if (related instanceof Node && event.currentTarget.contains(related)) return;
+          setDropActive(false);
+          setDropPoint(null);
+        }}
+        onDrop={(event) => {
+          const blobs = imageBlobsFromDataTransfer(event.dataTransfer);
+          setDropActive(false);
+          setDropPoint(null);
+          if (blobs.length === 0) return;
+          event.preventDefault();
+          event.stopPropagation();
+          void addImageBlobs(blobs, canvas.screenToWorld({
+            clientX: event.clientX,
+            clientY: event.clientY,
+          }));
+        }}
         onClick={(event) => {
           if (event.target !== event.currentTarget) return;
           jumpCursorRef.current = null;
@@ -1152,6 +1300,14 @@ function BoardPageView({
         }}
       >
         <BoardState loading={loading} error={error} hasTiles={hasOracleTiles} />
+        {dropActive && dropPoint ? (
+          <ImageDropGhost
+            x={dropPoint.x - 180}
+            y={dropPoint.y - 120}
+            w={360}
+            h={240}
+          />
+        ) : null}
         {allTiles.map((item) => {
           const pane = item.kind === "oracle" ? terminalPane(census, item) : null;
           const selected = item.kind === "oracle" && item.id === selectedOracleId;
@@ -1162,6 +1318,9 @@ function BoardPageView({
               siblings={allTiles}
               canvas={canvas}
               style={{ zIndex: tileZIndex(item) }}
+              minWidth={item.kind === "image" ? 64 : undefined}
+              minHeight={item.kind === "image" ? 48 : undefined}
+              aspectRatio={item.kind === "image" ? imageAspectRatio(item) : null}
               className={`${tileClassName(item)} ${
                 selected
                   ? "selected ring-2 ring-[var(--idle)] ring-offset-2 ring-offset-[var(--bg)] shadow-[0_0_14px_var(--idle-glow)]"
@@ -1231,7 +1390,11 @@ function BoardPageView({
               ) : item.kind === "terminal" ? (
                 <TerminalTile item={item} onClose={closeTerminal} />
               ) : (
-                <BoardItemContent item={item} onNoteChange={updateNote} />
+                <BoardItemContent
+                  item={item}
+                  onNoteChange={updateNote}
+                  onClose={closeBoardItem}
+                />
               )}
             </Tile>
           );
@@ -1302,8 +1465,9 @@ function BoardPageView({
       />
       {persistenceWarning ? (
         <p
-          className="pointer-events-none fixed bottom-24 left-1/2 z-40 -translate-x-1/2 rounded bg-[var(--surface)] px-2.5 py-1 font-mono text-[10px] text-[var(--pinned)] shadow-[0_0_0_1px_var(--line)]"
-          role="status"
+          className="board-toast"
+          data-board-toast="warning"
+          role="alert"
         >
           {persistenceWarning}
         </p>
