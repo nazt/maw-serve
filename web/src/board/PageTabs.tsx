@@ -14,6 +14,8 @@ interface PageTabsProps {
   onDelete: (pageId: string) => void;
 }
 
+const subActionClass = "grid h-11 w-11 shrink-0 place-items-center rounded text-[var(--ink-dim)] opacity-0 transition-[color,background-color,opacity] duration-150 hover:bg-[var(--surface-2)] hover:text-[var(--ink)] focus:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-[var(--idle)] group-hover:opacity-100 motion-reduce:transition-none";
+
 export default function PageTabs({
   pages,
   activePageId,
@@ -114,7 +116,7 @@ export default function PageTabs({
                 </a>
               )}
               <a
-                className="ml-0.5 text-[10px] text-[var(--ink-dim)] opacity-0 transition-opacity hover:text-[var(--ink)] focus:opacity-100 focus:outline-none group-hover:opacity-100"
+                className={`${subActionClass} ml-0.5 text-[10px]`}
                 href={boardPageHref(page.id)}
                 target="_blank"
                 rel="noopener noreferrer"
@@ -126,7 +128,7 @@ export default function PageTabs({
               {pages.length > 1 && page.system !== "display" ? (
                 <button
                   type="button"
-                  className="ml-0.5 text-[11px] text-[var(--ink-dim)] opacity-0 transition-opacity hover:text-[var(--ink)] focus:opacity-100 focus:outline-none group-hover:opacity-100"
+                  className={`${subActionClass} ml-0.5 text-[11px]`}
                   aria-label={`${page.system === "space" ? "Close" : "Delete"} ${page.name} board page`}
                   title={page.system === "space" ? "Close tab" : "Delete page"}
                   onClick={() => onDelete(page.id)}
@@ -140,7 +142,7 @@ export default function PageTabs({
       </div>
       <button
         type="button"
-        className="shrink-0 px-1 py-0.5 text-xs text-[var(--ink-dim)] hover:text-[var(--ink)] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-[var(--idle)]"
+        className="grid h-11 w-11 shrink-0 place-items-center rounded text-xs text-[var(--ink-dim)] transition-colors duration-150 hover:bg-[var(--surface-2)] hover:text-[var(--ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-[var(--idle)] motion-reduce:transition-none"
         aria-label="Create board page"
         title="New board page"
         onClick={onCreate}

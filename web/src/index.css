@@ -74,8 +74,12 @@
 
 @layer components {
   .mirror-window {
-    border-color: oklch(var(--line-channels) / 0.72);
+    border-color: oklch(var(--mirror-line-channels) / 0.82);
     color: var(--ink-faint);
+  }
+
+  .mirror-space {
+    border-color: var(--mirror-line);
   }
 
   .mirror-window--oracle {
@@ -681,6 +685,34 @@
     opacity: 0;
     pointer-events: none;
     transition: opacity 180ms var(--ease-out-expo);
+  }
+
+  .oracle-annotation:focus-visible {
+    position: absolute;
+    z-index: 30;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    max-height: 100%;
+    overflow: auto;
+    padding: 0.5rem;
+    border-radius: 0.25rem;
+    outline: 2px solid var(--idle);
+    outline-offset: -2px;
+    background: var(--surface-2);
+    color: var(--ink);
+    font-size: 0.75rem;
+    line-height: 1.35;
+    text-overflow: clip;
+    white-space: normal;
+  }
+
+  .build-badge > summary {
+    list-style: none;
+  }
+
+  .build-badge > summary::-webkit-details-marker {
+    display: none;
   }
 
   .tile:hover .oracle-meta,

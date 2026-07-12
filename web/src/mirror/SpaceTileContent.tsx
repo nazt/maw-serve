@@ -83,14 +83,14 @@ export default function SpaceTileContent({
       className={`mirror-space flex h-full flex-col overflow-hidden rounded-md border bg-[var(--surface)] ${
         space.hasFocus
           ? "border-[var(--active)] shadow-[0_0_15px_var(--active-glow)]"
-          : "border-[var(--line)]"
+          : ""
       }`}
       data-display-index={display.index}
       data-space-index={space.index}
       data-space-visible={space.isVisible || undefined}
       data-space-focused={space.hasFocus || undefined}
     >
-      <header className="flex h-9 shrink-0 items-center gap-2 border-b border-[var(--line)] bg-[var(--surface-2)] px-2.5 font-mono">
+      <header className="flex h-9 shrink-0 items-center gap-2 border-b border-[var(--mirror-line)] bg-[var(--surface-2)] px-2.5 font-mono">
         <strong className="text-xs text-[var(--ink)]">space {space.index}</strong>
         {space.isVisible ? (
           <span className="rounded-sm bg-[oklch(var(--active-channels)/0.14)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--active)]">
@@ -120,7 +120,7 @@ export default function SpaceTileContent({
 
       <div ref={bodyRef} className="relative min-h-0 flex-1 overflow-hidden bg-[var(--bg)]">
         <div
-          className="absolute overflow-hidden rounded-[3px] border border-[oklch(var(--line-channels)/0.82)] bg-[oklch(var(--surface-channels)/0.55)]"
+          className="absolute overflow-hidden rounded-[3px] border border-[color:oklch(var(--mirror-line-channels)/0.82)] bg-[oklch(var(--surface-channels)/0.55)]"
           data-display-frame="true"
           style={{
             left: fitted.x,

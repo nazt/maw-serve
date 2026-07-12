@@ -33,6 +33,10 @@ const compactNumber = new Intl.NumberFormat(undefined, {
   maximumFractionDigits: 1,
 });
 
+function shortCommit(commit: string): string {
+  return commit.slice(0, 8);
+}
+
 export function summarizeFleet(items: FleetTileItem[], usage: UsagePayload | null): FleetSummary {
   const summary: FleetSummary = {
     active: 0,
@@ -100,13 +104,7 @@ export function StatusBar({
     return () => controller.abort();
   }, []);
 
-  const uiBuildLabel = `${__STOA_BUILD__.branch} @ ${__STOA_BUILD__.commit} · ${__STOA_BUILD__.builder}`;
-  const serverBuildLabel = serverBuild
-    ? `data ${serverBuild.branch} @ ${serverBuild.commit} · ${serverBuild.builder}`
-    : activeHost
-      ? `data ${activeHost}`
-      : null;
-  const buildLabel = serverBuildLabel ? `${uiBuildLabel} · ${serverBuildLabel}` : uiBuildLabel;
+  const buildBadge = `build ${__STOA_BUILD__.branch}@${shortCommit(__STOA_BUILD__.commit)}`;
   const label = error
     ? "Fleet telemetry link interrupted"
     : `Fleet status: ${summary.active} active, ${summary.idle} idle, ${summary.stale} stale, ${summary.burnPerHour} tokens per hour, ${summary.accounts} accounts`;
@@ -148,13 +146,38 @@ export function StatusBar({
         <span className="h-1.5 w-1.5 rounded-full bg-[var(--active)] shadow-[0_0_5px_var(--active-glow)]" aria-hidden="true" />
         <span>{theme}</span>
       </button>
-      <span
-        className="max-w-[48vw] shrink-0 truncate rounded border border-[var(--line)] px-1.5 py-0.5 font-mono text-[11px] leading-none tabular-nums text-[var(--ink-faint)]"
-        title={`${buildLabel} · UI built ${__STOA_BUILD__.buildTime}${serverBuild ? ` · data built ${serverBuild.buildTime}` : ""}`}
-        aria-label={`Build ${buildLabel}`}
-      >
-        {buildLabel}
-      </span>
+      <details className="build-badge group relative shrink-0 font-mono">
+        <summary
+          className="inline-flex h-6 cursor-pointer items-center gap-1.5 rounded border border-[var(--line)] bg-[var(--surface-2)] px-2 text-[10px] font-semibold leading-none tabular-nums text-[var(--ink-faint)] transition-colors duration-150 hover:text-[var(--ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--idle)] motion-reduce:transition-none"
+          aria-label={`${buildBadge}. Open build details.`}
+          title="Build details"
+        >
+          <span className="h-1.5 w-1.5 rounded-full bg-[var(--ink-faint)]" aria-hidden="true" />
+          <span>{buildBadge}</span>
+        </summary>
+        <div className="absolute bottom-[calc(100%+0.5rem)] right-0 w-[min(24rem,calc(100vw-1.5rem))] rounded-md border border-[var(--line)] bg-[var(--surface-2)] p-3 text-[11px] leading-relaxed text-[var(--ink-dim)] shadow-[0_4px_8px_var(--elevation-shadow)]">
+          <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1">
+            <dt className="font-semibold text-[var(--ink)]">interface</dt>
+            <dd className="min-w-0 break-words tabular-nums">
+              {__STOA_BUILD__.branch}@{__STOA_BUILD__.commit} · {__STOA_BUILD__.builder}
+            </dd>
+            <dt className="font-semibold text-[var(--ink)]">built</dt>
+            <dd className="min-w-0 break-words tabular-nums">{__STOA_BUILD__.buildTime}</dd>
+            <dt className="font-semibold text-[var(--ink)]">data</dt>
+            <dd className="min-w-0 break-words tabular-nums">
+              {serverBuild
+                ? `${serverBuild.branch}@${serverBuild.commit} · ${serverBuild.builder}`
+                : activeHost || "identity unavailable"}
+            </dd>
+            {serverBuild ? (
+              <>
+                <dt className="font-semibold text-[var(--ink)]">updated</dt>
+                <dd className="min-w-0 break-words tabular-nums">{serverBuild.buildTime}</dd>
+              </>
+            ) : null}
+          </dl>
+        </div>
+      </details>
     </footer>
   );
 }
