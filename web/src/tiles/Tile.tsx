@@ -7,6 +7,7 @@ import {
   type TileChangeKind,
   type TileItem,
 } from "./useDrag";
+import "./Tile.css";
 
 export interface TileProps<Item extends TileItem = TileItem> {
   item: Item;
@@ -97,6 +98,15 @@ export function Tile<Item extends TileItem>({
     x: geometry.x,
     y: geometry.y,
   });
+  const safeZoom = Math.max(0.01, Number.isFinite(canvas.zoom) ? canvas.zoom : 1);
+  const resizeHandleStyle = {
+    "--tile-resize-hit": `${44 / safeZoom}px`,
+    "--tile-resize-offset": `${-22 / safeZoom}px`,
+    "--tile-resize-glyph": `${12 / safeZoom}px`,
+    "--tile-resize-glyph-nudge": `${2 / safeZoom}px`,
+    "--tile-resize-line": `${7 / safeZoom}px`,
+    "--tile-resize-stroke": `${1 / safeZoom}px`,
+  } as CSSProperties;
   const content = typeof children === "function" ? children(item) : children;
 
   return (
@@ -141,10 +151,13 @@ export function Tile<Item extends TileItem>({
         <button
           {...resizeHandlers}
           aria-label={`Resize ${item.kind} tile`}
-          className="resize-handle absolute bottom-0 right-0 z-20 h-4 w-4 cursor-nwse-resize touch-none border-0 bg-transparent p-0"
+          className="resize-handle tile-resize-handle absolute z-20 cursor-nwse-resize touch-none border-0 bg-transparent p-0"
           data-resize-handle="true"
+          style={resizeHandleStyle}
           type="button"
-        />
+        >
+          <span className="tile-resize-handle__glyph" aria-hidden="true" />
+        </button>
       </article>
       {guides.map((guide) => (
         <Guide key={guide.axis} guide={guide} canvas={canvas} />
