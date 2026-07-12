@@ -33,6 +33,7 @@ interface SpaceTileContentProps {
   statusByOracle: ReadonlyMap<string, OracleStatus>;
   modelByOracle: ReadonlyMap<string, string>;
   onOracleDoubleClick: (oracle: string) => void;
+  onExpand: () => void;
 }
 
 const STATUS_COLOR: Record<OracleStatus, string> = {
@@ -49,6 +50,7 @@ export default function SpaceTileContent({
   statusByOracle,
   modelByOracle,
   onOracleDoubleClick,
+  onExpand,
 }: SpaceTileContentProps) {
   const bodyRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 1, height: 1 });
@@ -101,6 +103,19 @@ export default function SpaceTileContent({
         {space.pinned ? (
           <span className="ml-auto text-[10px] font-semibold text-[var(--pinned)]">pin</span>
         ) : null}
+        <button
+          type="button"
+          className={`${space.pinned ? "" : "ml-auto"} grid h-6 w-6 shrink-0 place-items-center rounded text-sm leading-none text-[var(--ink-dim)] transition-colors duration-150 hover:bg-[var(--surface)] hover:text-[var(--ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--idle)]`}
+          aria-label={`Expand space ${space.index} to full tab`}
+          title="Expand space to full tab"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            onExpand();
+          }}
+        >
+          <span aria-hidden="true">⤢</span>
+        </button>
       </header>
 
       <div ref={bodyRef} className="relative min-h-0 flex-1 overflow-hidden bg-[var(--bg)]">

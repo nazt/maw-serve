@@ -12,13 +12,12 @@ import type { Theme } from "../theme";
 import {
   normalizeOracleHandle,
   useFleet,
-  type CensusOracle,
-  type CensusPayload,
   type OracleStatus,
 } from "../fleet/useFleet";
 import Tile from "../tiles/Tile";
 import { defaultSpaceGrid } from "./model";
 import SpaceTileContent, { type SpaceTileItem } from "./SpaceTileContent";
+import { terminalTarget } from "./terminalTarget";
 import type { MirrorConnection, MirrorDisplay, MirrorReport, OraclePulseMap } from "./types";
 
 const USER_ITEM_MIN_Z = 10;
@@ -38,34 +37,13 @@ interface MirrorPageViewProps {
   onCreatePage: () => void;
   onRenamePage: (pageId: string, name: string) => void;
   onDeletePage: (pageId: string) => void;
+  onExpandSpace: (displayIndex: number, spaceIndex: number) => void;
   theme: Theme;
   onToggleTheme: () => void;
 }
 
 type MenuState = { x: number; y: number; id: string | null };
 type MirrorTileItem = SpaceTileItem | TerminalTileItem;
-
-function terminalTarget(census: CensusPayload | null, oracle: string): CensusOracle | null {
-  const target = normalizeOracleHandle(oracle);
-  const matches: CensusOracle[] = [];
-  for (const display of census?.displays ?? []) {
-    for (const space of display.spaces ?? []) {
-      for (const row of space.oracles ?? []) {
-        if (normalizeOracleHandle(row.oracle) === target && row.session && row.pane) matches.push(row);
-      }
-    }
-  }
-  const idle = (value: unknown) => {
-    const number = Number(value);
-    return Number.isFinite(number) && number >= 0 ? number : Number.POSITIVE_INFINITY;
-  };
-  matches.sort((left, right) => (
-    Number(String(right.status).toLowerCase() === "active") -
-      Number(String(left.status).toLowerCase() === "active") ||
-    idle(left.idleSec) - idle(right.idleSec)
-  ));
-  return matches[0] ?? null;
-}
 
 function defaultsFor(items: readonly { index: number }[]): Record<string, PersistedGeometry> {
   const rects = defaultSpaceGrid(items.length);
@@ -91,6 +69,7 @@ export default function MirrorPageView({
   onCreatePage,
   onRenamePage,
   onDeletePage,
+  onExpandSpace,
   theme,
   onToggleTheme,
 }: MirrorPageViewProps) {
@@ -367,6 +346,7 @@ export default function MirrorPageView({
                 statusByOracle={statusByOracle}
                 modelByOracle={modelByOracle}
                 onOracleDoubleClick={(oracle) => openTerminal(oracle, item)}
+                onExpand={() => onExpandSpace(display.index, item.data.space.index)}
               />
             ) : (
               <TerminalTile

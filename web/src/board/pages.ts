@@ -1,13 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 export const BOARD_PAGES_STORAGE_KEY = "stoa.board.pages.v1";
+export const SPACE_PAGES_STORAGE_KEY = "stoa.board.spacepages.v1";
 export const DEFAULT_PAGE_ID = "fleet";
 
 export interface BoardPage {
   id: string;
   name: string;
-  system?: "display";
+  system?: "display" | "space";
   displayIndex?: number;
+  spaceIndex?: number;
+}
+
+export interface OpenSpacePage {
+  displayIndex: number;
+  spaceIndex: number;
 }
 
 const DEFAULT_PAGES: BoardPage[] = [{ id: DEFAULT_PAGE_ID, name: "fleet" }];
@@ -54,6 +61,43 @@ export function saveBoardPages(pages: BoardPage[]): void {
     );
   } catch {
     // The page list remains available for the current browser session.
+  }
+}
+
+function validOpenSpacePage(value: unknown): value is OpenSpacePage {
+  if (!value || typeof value !== "object") return false;
+  const page = value as Partial<OpenSpacePage>;
+  return Number.isInteger(page.displayIndex) && Number.isInteger(page.spaceIndex);
+}
+
+export function loadOpenSpacePages(): OpenSpacePage[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(SPACE_PAGES_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as { version?: unknown; pages?: unknown };
+    if (parsed.version !== 1 || !Array.isArray(parsed.pages)) return [];
+    const ids = new Set<string>();
+    return parsed.pages.filter(validOpenSpacePage).filter((page) => {
+      const id = `${page.displayIndex}:${page.spaceIndex}`;
+      if (ids.has(id)) return false;
+      ids.add(id);
+      return true;
+    });
+  } catch {
+    return [];
+  }
+}
+
+export function saveOpenSpacePages(pages: readonly OpenSpacePage[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      SPACE_PAGES_STORAGE_KEY,
+      JSON.stringify({ version: 1, pages: pages.filter(validOpenSpacePage) }),
+    );
+  } catch {
+    // The open set remains available for the current browser session.
   }
 }
 

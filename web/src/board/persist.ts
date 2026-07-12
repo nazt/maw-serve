@@ -169,6 +169,7 @@ function boardItem(value: unknown): PersistedBoardItem | null {
         oracle: data.oracle,
         session: data.session,
         window: data.window,
+        ...(typeof data.model === "string" ? { model: data.model } : {}),
       },
     };
   }
