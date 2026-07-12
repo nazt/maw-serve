@@ -10,6 +10,7 @@ export interface TerminalTileItem {
   y: number;
   w: number;
   h: number;
+  zIndex?: number;
   data: {
     oracle: string;
     session: string;

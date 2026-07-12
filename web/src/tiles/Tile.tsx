@@ -17,6 +17,7 @@ export interface TileProps<Item extends TileItem = TileItem> {
   style?: CSSProperties;
   minWidth?: number;
   minHeight?: number;
+  onActivate?: (item: Item) => void;
   onChange?: (item: Item, kind: TileChangeKind) => void;
   onCommit?: (item: Item, kind: TileChangeKind) => void;
 }
@@ -69,6 +70,7 @@ export function Tile<Item extends TileItem>({
   style,
   minWidth,
   minHeight,
+  onActivate,
   onChange,
   onCommit,
 }: TileProps<Item>) {
@@ -101,10 +103,18 @@ export function Tile<Item extends TileItem>({
         className={classes(
           "tile absolute left-0 top-0 origin-top-left touch-none select-none will-change-transform",
           item.kind,
-          dragging && "is-dragging z-30 cursor-grabbing",
-          resizing && "is-resizing z-30",
+          dragging && "is-dragging cursor-grabbing",
+          resizing && "is-resizing",
           className,
         )}
+        onPointerDownCapture={(event) => {
+          if (event.button === 0) onActivate?.(item);
+        }}
+        onFocusCapture={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+            onActivate?.(item);
+          }
+        }}
         data-dragging={dragging || undefined}
         data-kind={item.kind}
         data-resizing={resizing || undefined}

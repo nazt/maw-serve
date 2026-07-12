@@ -29,6 +29,7 @@ export interface TileItem<Data = unknown> {
   y: number;
   w: number;
   h: number;
+  zIndex?: number;
   data: Data;
 }
 
