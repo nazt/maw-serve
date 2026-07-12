@@ -1,6 +1,6 @@
 {
-  "branch": "agents/stoa-term-fit",
-  "commit": "1561059",
-  "builder": "stoa-term-fit",
-  "buildTime": "2026-07-12T07:27:13.700Z"
+  "branch": "agents/stoa-mirror",
+  "commit": "21c603c",
+  "builder": "stoa-topo",
+  "buildTime": "2026-07-12T07:54:16.766Z"
 }

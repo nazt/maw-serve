@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { packItems, renderRectsSVG, type Rect } from "../src/clients/layout-core";
+import { normalizeRectToFrame, packItems, renderRectsSVG, type Rect } from "../src/clients/layout-core";
 
 test("layout-core packItems returns indexed rects", () => {
   const outer: Rect = { x: 0, y: 0, w: 900, h: 600 };
@@ -15,4 +15,24 @@ test("layout-core renderRectsSVG returns svg markup", () => {
   const svg = renderRectsSVG(outer, items.map((it) => ({ rect: it.rect, label: String(it.index) })));
   expect(svg.length).toBeGreaterThan(0);
   expect(svg).toContain("<svg");
+});
+
+test("normalizeRectToFrame subtracts a negative display origin", () => {
+  const display = { x: -2560, y: 0, w: 2560, h: 1440 };
+  expect(normalizeRectToFrame({ x: -2560, y: 0, w: 1280, h: 720 }, display)).toEqual({
+    x: 0,
+    y: 0,
+    w: 0.5,
+    h: 0.5,
+  });
+});
+
+test("normalizeRectToFrame preserves portrait logical-point proportions", () => {
+  const display = { x: 4736, y: -836, w: 1440, h: 2560 };
+  expect(normalizeRectToFrame({ x: 5096, y: -196, w: 720, h: 1280 }, display)).toEqual({
+    x: 0.25,
+    y: 0.25,
+    w: 0.5,
+    h: 0.5,
+  });
 });

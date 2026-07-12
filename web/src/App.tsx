@@ -42,8 +42,10 @@ import {
 import PageTabs from "./board/PageTabs";
 import {
   BOARD_PAGES_STORAGE_KEY,
+  boardPageHref,
   createBoardPage,
   loadBoardPages,
+  pageIdFromHash,
   saveBoardPages,
   useHashPage,
   type BoardPage,
@@ -63,6 +65,9 @@ import {
   type OracleTileItem,
 } from "./fleet/useFleet";
 import Tile from "./tiles/Tile";
+import MirrorPageView from "./mirror/MirrorPageView";
+import { displayPageId } from "./mirror/model";
+import { useMirrorOracleModels, useMirrorReport, useOraclePulse } from "./mirror/useMirror";
 
 type AppTileItem = FleetTileItem | TerminalTileItem;
 type UserBoardItem = BoardItem | TerminalTileItem;
@@ -595,6 +600,7 @@ interface BoardPageViewProps {
   onCreatePage: () => void;
   onRenamePage: (pageId: string, name: string) => void;
   onDeletePage: (pageId: string) => void;
+  oracleDisplayPages: ReadonlyMap<string, string>;
 }
 
 function BoardPageView({
@@ -604,6 +610,7 @@ function BoardPageView({
   onCreatePage,
   onRenamePage,
   onDeletePage,
+  oracleDisplayPages,
 }: BoardPageViewProps) {
   const [restoredState] = useState(() => loadBoardState(pageId));
   const [restoredItems] = useState(() => normalizeUserItemZ(restoredState.items));
@@ -1431,6 +1438,18 @@ function BoardPageView({
                   }}
                 >
                   <OracleTileContent item={item} />
+                  {oracleDisplayPages.get(normalizeOracleHandle(item.data.oracle)) ? (
+                    <a
+                      className="absolute right-1.5 top-1.5 z-20 grid h-6 w-6 place-items-center rounded border border-[var(--line)] bg-[var(--surface-2)] font-mono text-xs text-[var(--ink-dim)] hover:border-[var(--idle)] hover:text-[var(--ink)]"
+                      href={boardPageHref(oracleDisplayPages.get(normalizeOracleHandle(item.data.oracle))!)}
+                      aria-label={`Open ${item.data.oracle} physical display mirror`}
+                      title="Open physical display mirror"
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      &gt;
+                    </a>
+                  ) : null}
                   {pane || selected ? (
                     <span
                       className={`oracle-meta ${
@@ -1547,16 +1566,51 @@ function BoardPageView({
 }
 
 export default function App() {
-  const [pages, setPages] = useState(loadBoardPages);
+  const [manualPages, setManualPages] = useState(loadBoardPages);
+  const mirror = useMirrorReport();
+  const pulse = useOraclePulse();
+  const mirrorModels = useMirrorOracleModels();
+  const displayPages = useMemo<BoardPage[]>(() => (mirror.report?.displays ?? [])
+    .map((display) => ({
+      id: displayPageId(display),
+      name: display.name,
+      system: "display" as const,
+      displayIndex: display.index,
+    })), [mirror.report?.displays]);
+  const pendingDisplayPage = useMemo<BoardPage | null>(() => {
+    if (mirror.report || typeof window === "undefined") return null;
+    const requested = pageIdFromHash(window.location.hash);
+    return requested?.startsWith("display-")
+      ? { id: requested, name: "display", system: "display" }
+      : null;
+  }, [mirror.report]);
+  const pages = useMemo(() => {
+    const manualIds = new Set(manualPages.map((page) => page.id));
+    const auto = [...displayPages];
+    if (pendingDisplayPage && !auto.some((page) => page.id === pendingDisplayPage.id)) {
+      auto.push(pendingDisplayPage);
+    }
+    return [...manualPages, ...auto.filter((page) => !manualIds.has(page.id))];
+  }, [displayPages, manualPages, pendingDisplayPage]);
   const { pageId, navigate } = useHashPage(pages);
+  const oracleDisplayPages = useMemo(() => {
+    const byDisplay = new Map((mirror.report?.displays ?? []).map((display) => [
+      display.index,
+      displayPageId(display),
+    ]));
+    return new Map((mirror.report?.fleet ?? []).flatMap((row) => {
+      const target = byDisplay.get(row.display);
+      return target ? [[normalizeOracleHandle(row.oracle), target] as const] : [];
+    }));
+  }, [mirror.report]);
 
-  useEffect(() => saveBoardPages(pages), [pages]);
+  useEffect(() => saveBoardPages(manualPages), [manualPages]);
 
   useEffect(() => {
     const syncPages = (event: StorageEvent) => {
       if (event.key !== BOARD_PAGES_STORAGE_KEY) return;
       const next = loadBoardPages();
-      setPages((current) => (
+      setManualPages((current) => (
         JSON.stringify(current) === JSON.stringify(next) ? current : next
       ));
     };
@@ -1565,15 +1619,16 @@ export default function App() {
   }, []);
 
   const createPage = useCallback(() => {
-    const page = createBoardPage(pages);
-    setPages((current) => [...current, page]);
+    const page = createBoardPage(manualPages);
+    setManualPages((current) => [...current, page]);
     navigate(page.id);
-  }, [navigate, pages]);
+  }, [manualPages, navigate]);
 
   const renamePage = useCallback((targetPageId: string, name: string) => {
     const nextName = name.trim().slice(0, 40);
     if (!nextName) return;
-    setPages((current) => current.map((page) => (
+    if (displayPages.some((page) => page.id === targetPageId)) return;
+    setManualPages((current) => current.map((page) => (
       page.id === targetPageId ? { ...page, name: nextName } : page
     )));
   }, []);
@@ -1581,7 +1636,11 @@ export default function App() {
   const deletePage = useCallback((targetPageId: string) => {
     if (pages.length <= 1) return;
     const page = pages.find((candidate) => candidate.id === targetPageId);
-    if (!page || !window.confirm(`Delete board page “${page.name}”?`)) return;
+    if (!page) return;
+    if (page.system === "display") {
+      return;
+    }
+    if (!window.confirm(`Delete board page “${page.name}”?`)) return;
 
     const targetIndex = pages.findIndex((candidate) => candidate.id === targetPageId);
     const remaining = pages.filter((candidate) => candidate.id !== targetPageId);
@@ -1589,7 +1648,7 @@ export default function App() {
       const fallback = remaining[Math.min(targetIndex, remaining.length - 1)];
       navigate(fallback.id);
     }
-    setPages(remaining);
+    setManualPages((current) => current.filter((candidate) => candidate.id !== targetPageId));
     window.setTimeout(() => clearBoardState(targetPageId), 0);
   }, [navigate, pageId, pages]);
 
@@ -1617,6 +1676,31 @@ export default function App() {
     return () => window.removeEventListener("keydown", cyclePages);
   }, [navigate, pageId, pages]);
 
+  const activeDisplay = mirror.report?.displays.find(
+    (display) => displayPageId(display) === pageId,
+  );
+
+  if (activeDisplay && mirror.report) {
+    return (
+      <MirrorPageView
+        key={pageId}
+        pageId={pageId}
+        display={activeDisplay}
+        report={mirror.report}
+        connection={mirror.connection}
+        mirrorError={mirror.error}
+        argusConnected={pulse.connected}
+        pulses={pulse.pulses}
+        modelByOracle={mirrorModels}
+        pages={pages}
+        onSelectPage={navigate}
+        onCreatePage={createPage}
+        onRenamePage={renamePage}
+        onDeletePage={deletePage}
+      />
+    );
+  }
+
   return (
     <BoardPageView
       key={pageId}
@@ -1626,6 +1710,7 @@ export default function App() {
       onCreatePage={createPage}
       onRenamePage={renamePage}
       onDeletePage={deletePage}
+      oracleDisplayPages={oracleDisplayPages}
     />
   );
 }

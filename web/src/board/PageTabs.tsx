@@ -60,7 +60,7 @@ export default function PageTabs({
               className="group relative flex shrink-0 items-center"
               key={page.id}
             >
-              {editingId === page.id ? (
+              {editingId === page.id && page.system !== "display" ? (
                 <input
                   ref={inputRef}
                   className="w-24 border-0 border-b border-[var(--idle)] bg-transparent px-1.5 py-0.5 text-xs text-[var(--ink)] outline-none"
@@ -102,9 +102,12 @@ export default function PageTabs({
                   }}
                   onDoubleClick={(event) => {
                     event.preventDefault();
-                    beginRename(page);
+                    if (page.system !== "display") beginRename(page);
                   }}
                 >
+                  {page.system === "display" ? (
+                    <span className="mr-1 text-[var(--ink-faint)]" aria-hidden="true">▣</span>
+                  ) : null}
                   {page.name}
                 </a>
               )}
@@ -118,7 +121,7 @@ export default function PageTabs({
               >
                 ↗
               </a>
-              {pages.length > 1 ? (
+              {pages.length > 1 && page.system !== "display" ? (
                 <button
                   type="button"
                   className="ml-0.5 text-[11px] text-[var(--ink-dim)] opacity-0 transition-opacity hover:text-[var(--ink)] focus:opacity-100 focus:outline-none group-hover:opacity-100"
