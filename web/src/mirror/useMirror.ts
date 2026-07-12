@@ -113,6 +113,8 @@ export function useMirrorReport(): MirrorFeed {
         const response = await apiFetch("/api/spaces", { cache: "no-store" });
         if (!response.ok) throw new Error(`mirror REST ${response.status}`);
         publish(sanitizeSpaceReport(await response.json()), "rest");
+        cloud?.close();
+        cloud = null;
       } catch (cause) {
         const nextError = cause instanceof Error ? cause : new Error("mirror REST unavailable");
         setError(nextError);

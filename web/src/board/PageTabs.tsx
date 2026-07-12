@@ -121,7 +121,7 @@ export default function PageTabs({
               >
                 ↗
               </a>
-              {pages.length > 1 ? (
+              {pages.length > 1 && page.system !== "display" ? (
                 <button
                   type="button"
                   className="ml-0.5 text-[11px] text-[var(--ink-dim)] opacity-0 transition-opacity hover:text-[var(--ink)] focus:opacity-100 focus:outline-none group-hover:opacity-100"

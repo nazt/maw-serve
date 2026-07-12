@@ -600,7 +600,6 @@ interface BoardPageViewProps {
   onCreatePage: () => void;
   onRenamePage: (pageId: string, name: string) => void;
   onDeletePage: (pageId: string) => void;
-  displayPages: BoardPage[];
   oracleDisplayPages: ReadonlyMap<string, string>;
 }
 
@@ -611,7 +610,6 @@ function BoardPageView({
   onCreatePage,
   onRenamePage,
   onDeletePage,
-  displayPages,
   oracleDisplayPages,
 }: BoardPageViewProps) {
   const [restoredState] = useState(() => loadBoardState(pageId));
@@ -1296,23 +1294,6 @@ function BoardPageView({
           onRename={onRenamePage}
           onDelete={onDeletePage}
         />
-        {pageId === "fleet" && displayPages.length > 0 ? (
-          <nav className="pointer-events-auto flex max-w-[35vw] items-center gap-1 overflow-x-auto" aria-label="Physical display mirrors">
-            {displayPages.map((page) => (
-              <a
-                key={page.id}
-                className="shrink-0 rounded border border-[var(--line)] bg-[var(--surface)] px-1.5 py-0.5 text-[10px] text-[var(--ink-dim)] hover:border-[var(--idle)] hover:text-[var(--ink)]"
-                href={boardPageHref(page.id)}
-                onClick={(event) => {
-                  event.preventDefault();
-                  onSelectPage(page.id);
-                }}
-              >
-                ▣ {page.name}
-              </a>
-            ))}
-          </nav>
-        ) : null}
       </header>
 
       <Fabric
@@ -1586,7 +1567,6 @@ function BoardPageView({
 
 export default function App() {
   const [manualPages, setManualPages] = useState(loadBoardPages);
-  const [hiddenDisplays, setHiddenDisplays] = useState<Set<string>>(() => new Set());
   const mirror = useMirrorReport();
   const pulse = useOraclePulse();
   const mirrorModels = useMirrorOracleModels();
@@ -1596,8 +1576,7 @@ export default function App() {
       name: display.name,
       system: "display" as const,
       displayIndex: display.index,
-    }))
-    .filter((page) => !hiddenDisplays.has(page.id)), [hiddenDisplays, mirror.report?.displays]);
+    })), [mirror.report?.displays]);
   const pendingDisplayPage = useMemo<BoardPage | null>(() => {
     if (mirror.report || typeof window === "undefined") return null;
     const requested = pageIdFromHash(window.location.hash);
@@ -1626,10 +1605,6 @@ export default function App() {
   }, [mirror.report]);
 
   useEffect(() => saveBoardPages(manualPages), [manualPages]);
-
-  useEffect(() => {
-    setHiddenDisplays(new Set());
-  }, [mirror.report?.ts]);
 
   useEffect(() => {
     const syncPages = (event: StorageEvent) => {
@@ -1663,11 +1638,6 @@ export default function App() {
     const page = pages.find((candidate) => candidate.id === targetPageId);
     if (!page) return;
     if (page.system === "display") {
-      if (!window.confirm(`Hide display page “${page.name}” until the next census change?`)) return;
-      const targetIndex = pages.findIndex((candidate) => candidate.id === targetPageId);
-      const remaining = pages.filter((candidate) => candidate.id !== targetPageId);
-      if (pageId === targetPageId) navigate(remaining[Math.min(targetIndex, remaining.length - 1)].id);
-      setHiddenDisplays((current) => new Set(current).add(targetPageId));
       return;
     }
     if (!window.confirm(`Delete board page “${page.name}”?`)) return;
@@ -1740,7 +1710,6 @@ export default function App() {
       onCreatePage={createPage}
       onRenamePage={renamePage}
       onDeletePage={deletePage}
-      displayPages={displayPages}
       oracleDisplayPages={oracleDisplayPages}
     />
   );

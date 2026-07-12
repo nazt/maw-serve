@@ -307,7 +307,7 @@ export default function MirrorPageView({
       </header>
 
       {report.profile.stale ? (
-        <p className="fixed left-1/2 top-14 z-40 -translate-x-1/2 rounded-md border border-[var(--pinned)] bg-[var(--surface-2)] px-3 py-1.5 font-mono text-[11px] text-[var(--pinned)] shadow-[0_0_10px_var(--pinned-glow)]" role="status">
+        <p className="fixed bottom-12 left-3 z-40 max-w-[min(46rem,calc(100vw-1.5rem))] rounded-md border border-[var(--pinned)] bg-[var(--surface-2)] px-3 py-1.5 font-mono text-[11px] text-[var(--pinned)] shadow-[0_0_10px_var(--pinned-glow)]" role="status">
           {STALE_MESSAGE}
         </p>
       ) : null}
