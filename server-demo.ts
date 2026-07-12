@@ -16,6 +16,9 @@ const MAX_STREAM_CLIENTS = 24;
 const STREAM_REPLAY_EVENTS = 256;
 const STREAM_REPLAY_BYTES = 512 * 1024;
 const STREAM_CLEAR = "\u001b[2J\u001b[H";
+const CORS_ALLOWLIST_ENV = "MAW_SERVE_CORS_ORIGINS";
+const CORS_METHODS = "GET, OPTIONS";
+const CORS_HEADERS = "Accept, Cache-Control, Last-Event-ID";
 
 const CONTENT_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -45,6 +48,69 @@ const STREAM_HEADERS = {
   "x-agora-content-warning": "explicit-user-requested-pane-snapshot",
 };
 const textEncoder = new TextEncoder();
+
+function configuredCorsOrigins(): Set<string> {
+  const origins = new Set<string>();
+  for (const value of String(process.env[CORS_ALLOWLIST_ENV] ?? "").split(",")) {
+    const candidate = value.trim().replace(/\/+$/, "");
+    if (!candidate || candidate === "*") continue;
+    try {
+      const url = new URL(candidate);
+      if (/^https?:$/.test(url.protocol) && url.origin === candidate) origins.add(candidate);
+    } catch {
+      // Invalid allowlist entries are ignored rather than weakening to a wildcard.
+    }
+  }
+  return origins;
+}
+
+export function allowedCorsOrigin(req: Request): string | null {
+  const origin = req.headers.get("origin")?.trim().replace(/\/+$/, "") ?? "";
+  return origin && configuredCorsOrigins().has(origin) ? origin : null;
+}
+
+function appendVary(headers: Headers, value: string): void {
+  const current = headers.get("vary")?.split(",").map((entry) => entry.trim()).filter(Boolean) ?? [];
+  if (!current.some((entry) => entry.toLowerCase() === value.toLowerCase())) current.push(value);
+  headers.set("vary", current.join(", "));
+}
+
+function withCors(req: Request, response: Response): Response {
+  const origin = allowedCorsOrigin(req);
+  if (!origin) return response;
+
+  const headers = new Headers(response.headers);
+  headers.set("access-control-allow-origin", origin);
+  appendVary(headers, "Origin");
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+function preflightResponse(req: Request): Response {
+  const origin = allowedCorsOrigin(req);
+  if (!origin) {
+    return new Response(null, { status: 403, headers: { vary: "Origin" } });
+  }
+
+  const requestedMethod = req.headers.get("access-control-request-method")?.toUpperCase() ?? "GET";
+  if (requestedMethod !== "GET") {
+    return withCors(req, new Response(null, { status: 405, headers: { allow: CORS_METHODS } }));
+  }
+
+  const headers = new Headers({
+    "access-control-allow-methods": CORS_METHODS,
+    "access-control-allow-headers": CORS_HEADERS,
+    "access-control-allow-private-network": "true",
+    "access-control-max-age": "600",
+  });
+  appendVary(headers, "Access-Control-Request-Method");
+  appendVary(headers, "Access-Control-Request-Headers");
+  appendVary(headers, "Access-Control-Request-Private-Network");
+  return withCors(req, new Response(null, { status: 204, headers }));
+}
 
 interface StreamSubscriber {
   controller: ReadableStreamDefaultController<Uint8Array>;
@@ -668,22 +734,31 @@ function streamResponse(req: Request, url: URL): Response {
 
 export async function handleRequest(req: Request): Promise<Response> {
   const url = new URL(req.url);
+  if (req.method === "OPTIONS") return preflightResponse(req);
+  const respond = (response: Response) => withCors(req, response);
+  if (req.method !== "GET") {
+    return respond(new Response("method not allowed", {
+      status: 405,
+      headers: { allow: CORS_METHODS },
+    }));
+  }
+
   if (url.pathname === "/health") {
-    return Response.json({ ok: true, plugin: "maw-serve", prefix: "/api/agora" });
+    return respond(Response.json({ ok: true, plugin: "maw-serve", prefix: "/api/agora" }));
   }
 
-  if (url.pathname === "/api/agora/census") return censusResponse();
-  if (url.pathname === "/api/agora/usage") return usageResponse();
-  if (url.pathname === "/api/agora/version") return versionResponse();
-  if (url.pathname === "/api/agora/capture") return captureResponse(url);
-  if (url.pathname === "/api/agora/stream") return streamResponse(req, url);
-  if (url.pathname === "/api/agora" || url.pathname === "/api/agora/") return serveIndex();
+  if (url.pathname === "/api/agora/census") return respond(await censusResponse());
+  if (url.pathname === "/api/agora/usage") return respond(await usageResponse());
+  if (url.pathname === "/api/agora/version") return respond(await versionResponse());
+  if (url.pathname === "/api/agora/capture") return respond(await captureResponse(url));
+  if (url.pathname === "/api/agora/stream") return respond(streamResponse(req, url));
+  if (url.pathname === "/api/agora" || url.pathname === "/api/agora/") return respond(serveIndex());
   if (url.pathname.startsWith("/api/agora/") && /\.[^/]+$/.test(url.pathname)) {
-    return servePublicAsset(url.pathname);
+    return respond(await servePublicAsset(url.pathname));
   }
-  if (url.pathname.startsWith("/api/agora/")) return serveIndex();
+  if (url.pathname.startsWith("/api/agora/")) return respond(serveIndex());
 
-  return new Response("not found", { status: 404 });
+  return respond(new Response("not found", { status: 404 }));
 }
 
 if (import.meta.main) {

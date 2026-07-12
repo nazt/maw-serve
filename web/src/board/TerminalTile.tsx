@@ -3,6 +3,8 @@ import { Terminal, type ITheme } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { useEffect, useRef, useState } from "react";
 
+import { apiFetch, apiUrlWithParams, API_ENDPOINTS } from "../clients/api";
+
 export interface TerminalTileItem {
   id: string;
   kind: "terminal";
@@ -264,7 +266,7 @@ export function TerminalTile({
       const controller = new AbortController();
       pollController = controller;
 
-      void fetch(`/api/agora/capture?${captureParams()}`, {
+      void apiFetch(apiUrlWithParams(API_ENDPOINTS.capture, captureParams()), {
         signal: controller.signal,
         cache: "no-store",
         headers: { Accept: "application/json, text/plain;q=0.9" },
@@ -294,7 +296,7 @@ export function TerminalTile({
         return;
       }
 
-      eventSource = new EventSource(`/api/agora/stream?${captureParams()}`);
+      eventSource = new EventSource(apiUrlWithParams(API_ENDPOINTS.stream, captureParams()));
       eventSource.onopen = () => {
         if (receivedStreamFrame) updateStatus("live");
       };

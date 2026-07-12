@@ -1,9 +1,11 @@
 import { expect, test } from "bun:test";
+import { basename, resolve } from "node:path";
 
 import { resolveBuildIdentity } from "../build-identity";
 import { handleRequest } from "../server-demo";
 
 const repoRoot = `${import.meta.dir}/..`;
+const worktreeName = basename(resolve(repoRoot));
 
 test("production build identity reads git and the worktree builder", () => {
   const identity = resolveBuildIdentity({
@@ -14,7 +16,7 @@ test("production build identity reads git and the worktree builder", () => {
 
   expect(identity.branch).not.toBe("unknown");
   expect(identity.commit).toMatch(/^[0-9a-f]{7,}$/);
-  expect(identity.builder).toBe("stoa-server");
+  expect(identity.builder).toBe(worktreeName);
   expect(identity.buildTime).toBe("2026-07-12T00:00:00.000Z");
 });
 

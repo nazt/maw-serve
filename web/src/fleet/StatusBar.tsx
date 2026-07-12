@@ -1,3 +1,6 @@
+import { useEffect, useState } from "react";
+
+import { activeHost, apiFetch, API_ENDPOINTS } from "../clients/api";
 import type { FleetTileItem, UsagePayload } from "./useFleet";
 
 export interface StatusBarProps {
@@ -13,6 +16,13 @@ export interface FleetSummary {
   stale: number;
   burnPerHour: number;
   accounts: number;
+}
+
+interface ServerBuildIdentity {
+  branch: string;
+  commit: string;
+  builder: string;
+  buildTime: string;
 }
 
 const compactNumber = new Intl.NumberFormat(undefined, {
@@ -61,7 +71,33 @@ function Metric({ label, value, color = "var(--ink-dim)" }: MetricProps) {
 
 export function StatusBar({ items, usage, error = null, className = "" }: StatusBarProps) {
   const summary = summarizeFleet(items, usage);
-  const buildLabel = `${__STOA_BUILD__.branch} @ ${__STOA_BUILD__.commit} · ${__STOA_BUILD__.builder}`;
+  const [serverBuild, setServerBuild] = useState<ServerBuildIdentity | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    void apiFetch(API_ENDPOINTS.version, {
+      cache: "no-store",
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    }).then(async (response) => {
+      if (!response.ok) return;
+      const candidate = await response.json() as Partial<ServerBuildIdentity>;
+      if ([candidate.branch, candidate.commit, candidate.builder, candidate.buildTime]
+        .every((value) => typeof value === "string" && value.length > 0)) {
+        setServerBuild(candidate as ServerBuildIdentity);
+      }
+    }).catch(() => {
+      // Fleet polling owns the user-facing connectivity state.
+    });
+    return () => controller.abort();
+  }, []);
+
+  const uiBuildLabel = `${__STOA_BUILD__.branch} @ ${__STOA_BUILD__.commit} · ${__STOA_BUILD__.builder}`;
+  const serverBuildLabel = serverBuild
+    ? `data ${serverBuild.branch} @ ${serverBuild.commit} · ${serverBuild.builder}`
+    : activeHost
+      ? `data ${activeHost}`
+      : null;
+  const buildLabel = serverBuildLabel ? `${uiBuildLabel} · ${serverBuildLabel}` : uiBuildLabel;
   const label = error
     ? "Fleet telemetry link interrupted"
     : `Fleet status: ${summary.active} active, ${summary.idle} idle, ${summary.stale} stale, ${summary.burnPerHour} tokens per hour, ${summary.accounts} accounts`;
@@ -93,7 +129,7 @@ export function StatusBar({ items, usage, error = null, className = "" }: Status
       </div>
       <span
         className="max-w-[48vw] shrink-0 truncate rounded border border-[var(--line)] px-1.5 py-0.5 font-mono text-[11px] leading-none tabular-nums text-[var(--ink-dim)]"
-        title={`${buildLabel} · built ${__STOA_BUILD__.buildTime}`}
+        title={`${buildLabel} · UI built ${__STOA_BUILD__.buildTime}${serverBuild ? ` · data built ${serverBuild.buildTime}` : ""}`}
         aria-label={`Build ${buildLabel}`}
       >
         {buildLabel}

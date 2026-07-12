@@ -13,6 +13,11 @@ import CanvasContextMenu, {
 } from "./canvas/ContextMenu";
 import { useCanvas, type CanvasPoint } from "./canvas/useCanvas";
 import {
+  activeHost,
+  connectHostUrl,
+  shouldOfferHostConnection,
+} from "./clients/api";
+import {
   acquireImageSource,
   clipboardImageBlobs,
   createImageBoardItem,
@@ -407,6 +412,66 @@ interface BoardStateProps {
 
 function BoardState({ loading, error, hasTiles }: BoardStateProps) {
   if (hasTiles) return null;
+
+  if (error && shouldOfferHostConnection()) {
+    const exampleHost = "http://localhost:48900";
+    return (
+      <section
+        className="absolute left-1/2 top-1/2 z-10 w-[min(32rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-lg border border-[var(--line)] bg-[var(--surface)] p-5 font-sans"
+        role="alert"
+        aria-labelledby="stoa-connect-title"
+      >
+        <p className="mb-1 font-mono text-[11px] text-[var(--idle)]">local fleet connection</p>
+        <h2 id="stoa-connect-title" className="text-lg font-semibold text-[var(--ink)]">
+          Point Stoa at your maw-serve
+        </h2>
+        <p className="mt-2 max-w-[62ch] text-sm leading-relaxed text-[var(--ink-dim)]">
+          This hosted board is only the interface. Your census, usage, and terminal stream stay
+          on your machine and are fetched directly by this browser.
+        </p>
+        {activeHost ? (
+          <p className="mt-3 break-all font-mono text-xs text-[var(--error)]">
+            Could not reach {activeHost}
+          </p>
+        ) : null}
+        <form className="mt-4" method="get">
+          <label
+            className="mb-1 block font-mono text-[11px] text-[var(--ink-dim)]"
+            htmlFor="stoa-host"
+          >
+            maw-serve URL
+          </label>
+          <div className="flex gap-2">
+            <input
+              id="stoa-host"
+              name="host"
+              type="url"
+              required
+              defaultValue={activeHost || exampleHost}
+              placeholder={exampleHost}
+              className="min-h-9 min-w-0 flex-1 rounded-md border border-[var(--line)] bg-[var(--bg)] px-3 font-mono text-xs text-[var(--ink)] outline-none focus:border-[var(--idle)]"
+              aria-describedby="stoa-host-hint"
+            />
+            <button
+              className="min-h-9 shrink-0 rounded-md bg-[var(--idle)] px-3 text-sm font-semibold text-[var(--bg)] transition-colors duration-150 hover:bg-[var(--active)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--idle)]"
+              type="submit"
+            >
+              Connect
+            </button>
+          </div>
+          <p id="stoa-host-hint" className="mt-2 font-mono text-[11px] text-[var(--ink-dim)]">
+            Example: {exampleHost}
+          </p>
+        </form>
+        <a
+          className="mt-3 inline-flex font-mono text-xs text-[var(--ink-dim)] underline decoration-[var(--line)] underline-offset-4 hover:text-[var(--ink)]"
+          href={connectHostUrl("")}
+        >
+          Use same-origin server
+        </a>
+      </section>
+    );
+  }
 
   const message = loading
     ? "Acquiring fleet telemetry…"

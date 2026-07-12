@@ -93,6 +93,42 @@ to the cloned repository, include the Bun and maw directories in `PATH`, and use
 `MAW_SERVE_PORT=4756`. Keep the process bound to a trusted interface or put authentication in
 front of it before exposing it beyond localhost.
 
+## Deploy the interface to Cloudflare Workers (optional)
+
+The Cloudflare deployment contains **static UI assets only**. Census, usage, version, capture,
+and terminal stream requests go directly from the viewer's browser to that viewer's own
+`maw-serve`; fleet data does not pass through Cloudflare.
+
+1. Build the UI configured for `stoa.buildwithoracle.com` in
+   [`wrangler.stoa.json`](./wrangler.stoa.json).
+2. Start the local data server with that exact HTTPS origin allowlisted (comma-separate more
+   than one origin when needed):
+
+   ```bash
+   MAW_SERVE_PORT=48900 \
+   MAW_SERVE_CORS_ORIGINS=https://stoa.buildwithoracle.com \
+   bun server-demo.ts
+   ```
+
+3. Deploy the already-built `public/` directory:
+
+   ```bash
+   cd web && bun install && bun run build && cd ..
+   npx wrangler deploy --config wrangler.stoa.json
+   ```
+
+4. Open the hosted board and point it at the local server:
+
+   ```text
+   https://stoa.buildwithoracle.com/api/agora/?host=http://localhost:48900
+   ```
+
+Host selection is resolved once per page load in this order: the `?host=` parameter, the
+previously saved host, then same-origin. Use an empty `?host=` to clear the saved value and
+return to same-origin mode. Chrome may ask for local-network access; the client declares
+loopback separately from LAN targets, and the allowlisted server answers the corresponding
+Private Network Access preflight. There is deliberately no wildcard CORS mode.
+
 ## Trust model
 
 - **No secrets in feeds.** Usage exposes names and rates, not tokens or account credentials.
@@ -108,6 +144,8 @@ front of it before exposing it beyond localhost.
 - `GET /api/agora/census` — local topology from `maw census --json`
 - `GET /api/agora/usage` — Argus board-tile usage data, with no secrets
 - `GET /api/agora/capture?session=&window=&lines=` — explicit read-only pane snapshot
+- `GET /api/agora/stream?session=&window=&lines=` — read-only terminal SSE
+- `GET /api/agora/version` — branch, commit, and builder identity
 
 For frontend features, architecture, and development notes, see
 [web/README.md](./web/README.md). For upstream inspiration and license details, see
