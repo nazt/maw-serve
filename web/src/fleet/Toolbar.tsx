@@ -49,7 +49,7 @@ export function Toolbar({
         Fit
       </button>
       <output
-        className="min-w-12 px-1 text-center font-mono text-xs tabular-nums text-[var(--idle)]"
+        className="min-w-12 px-1 text-center font-mono text-xs tabular-nums text-[var(--ink-dim)]"
         aria-label="Canvas zoom"
         aria-live="polite"
       >

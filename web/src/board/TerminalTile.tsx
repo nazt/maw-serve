@@ -73,7 +73,7 @@ function fleetTerminalTheme(): ITheme {
 
   const theme: ITheme = {
     background: "#00000000",
-    foreground: color("oklch(0.86 0.08 155)", "#a9e4bd"),
+    foreground: color("var(--ink-dim)", "#b5c5c9"),
     cursor: color("var(--active)", "#75d99a"),
     cursorAccent: color("var(--bg)", "#122126"),
     selectionBackground: color("oklch(var(--idle-channels) / 0.24)", "#39705d99"),
@@ -100,13 +100,6 @@ function fleetTerminalTheme(): ITheme {
 
 function lineCount(text: string): number {
   return text.split("\n").length - 1;
-}
-
-function statusColor(status: ConnectionStatus): string {
-  if (status === "live") return "text-[var(--active)]";
-  if (status === "reconnecting") return "text-[var(--pinned)]";
-  if (status === "error") return "text-[var(--error)]";
-  return "text-[var(--ink-dim)]";
 }
 
 function statusDot(status: ConnectionStatus): string {
@@ -378,7 +371,7 @@ export function TerminalTile({
       </div>
 
       <footer
-        className={`shrink-0 border-t border-[var(--line)] px-2.5 py-1 font-mono text-[9px] tabular-nums ${statusColor(status)}`}
+        className="shrink-0 border-t border-[var(--line)] px-2.5 py-1 font-mono text-[9px] tabular-nums text-[var(--ink-dim)]"
         aria-live="polite"
         title={error ?? undefined}
       >

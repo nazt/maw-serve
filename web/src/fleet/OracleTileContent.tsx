@@ -76,7 +76,7 @@ export function OracleTileContent({ item, className = "" }: OracleTileContentPro
         <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-baseline gap-1.5">
           <span
             className="whitespace-nowrap font-mono text-[11px] tabular-nums"
-            style={{ color: status === "active" ? statusColor : "var(--ink-dim)" }}
+            style={{ color: "var(--ink-dim)" }}
           >
             {idleLabel(idleSec)}
           </span>

@@ -309,7 +309,7 @@ function BoardToolbar({
         title="Cycle recently active oracles (J)"
       >
         <span>Jump to active</span>
-        <kbd className="font-mono text-[10px] font-medium text-[var(--idle)]">J</kbd>
+        <kbd className="font-mono text-[10px] font-medium text-[var(--ink-dim)]">J</kbd>
       </button>
       <button
         type="button"
@@ -381,7 +381,7 @@ function BoardToolbar({
         </button>
         <button
           type="button"
-          className="min-h-7 min-w-12 border-x border-[var(--line)] px-1 font-mono text-xs tabular-nums text-[var(--idle)] transition-colors duration-150 hover:bg-[var(--surface-2)] focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--idle)]"
+          className="min-h-7 min-w-12 border-x border-[var(--line)] px-1 font-mono text-xs tabular-nums text-[var(--ink-dim)] transition-colors duration-150 hover:bg-[var(--surface-2)] focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--idle)]"
           onClick={onResetZoom}
           aria-label={`Reset canvas zoom to 100%. Current zoom ${zoomPercent}`}
           aria-keyshortcuts="0"
@@ -421,7 +421,7 @@ function BoardState({ loading, error, hasTiles }: BoardStateProps) {
         role="alert"
         aria-labelledby="stoa-connect-title"
       >
-        <p className="mb-1 font-mono text-[11px] text-[var(--idle)]">local fleet connection</p>
+        <p className="mb-1 font-mono text-[11px] text-[var(--ink-dim)]">local fleet connection</p>
         <h2 id="stoa-connect-title" className="text-lg font-semibold text-[var(--ink)]">
           Point Stoa at your maw-serve
         </h2>

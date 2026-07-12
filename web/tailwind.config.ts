@@ -10,6 +10,7 @@ export default {
     "bg-surface-2",
     "text-ink",
     "text-ink-dim",
+    "text-ink-faint",
     "border-line",
     "border-active",
     "border-idle",
@@ -79,6 +80,7 @@ export default {
         "surface-2": oklch("--surface-2-channels"),
         ink: oklch("--ink-channels"),
         "ink-dim": oklch("--ink-dim-channels"),
+        "ink-faint": oklch("--ink-faint-channels"),
         line: oklch("--line-channels"),
 
         active: oklch("--active-channels"),
