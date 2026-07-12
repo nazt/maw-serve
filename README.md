@@ -138,6 +138,21 @@ Private Network Access preflight. There is deliberately no wildcard CORS mode.
 - **State is a projection.** Census, Argus, and tmux remain authoritative; local board state is
   presentation and workspace state.
 
+### §1 output boundaries
+
+- **Terminal secrets have one implementation.** [`src/redact.ts`](./src/redact.ts) is the sole
+  token/key/password pattern set. `/capture` strips ANSI and then calls `redactSecrets`; `/stream`
+  calls the same function for snapshots, fallback frames, and completed lines. The stream keeps
+  only the transport-specific state needed to suppress a private-key block split across chunks.
+  Future transports, including P2P, must import this function rather than copy its patterns.
+- **Mirror window titles are dropped by construction.** `sanitizeSpaceReport` explicitly projects
+  raw mirror data into `MirrorWindow`, whose type has no `title` field. The similarly named
+  `fleet[].title` input is an oracle label and is renamed to `oracle`; it is not a window title.
+  `RedactedTitle` remains a separate branded boundary for optional census title rendering.
+- **Other sanitizers are not secret filters.** ANSI stripping is presentation-only, and terminal
+  session/window validation constrains the read-only maw target. Argus usage remains a deliberately
+  narrow names-and-rates payload. These checks complement, but never replace, `redactSecrets`.
+
 ## Routes
 
 - `GET /api/agora/` — board SPA and SPA fallback
