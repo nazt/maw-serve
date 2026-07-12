@@ -119,6 +119,11 @@ interface StreamSubscriber {
   detachAbort: () => void;
 }
 
+export interface PaneDimensions {
+  cols: number;
+  rows: number;
+}
+
 interface SharedTail {
   key: string;
   target: string;
@@ -268,6 +273,44 @@ export function captureLines(rawLines: string | null): number | null {
 function stripAnsi(text: string): string {
   // Terminal snapshots are rendered as plain monospace text in v1.
   return text.replace(/[\u001B\u009B][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[-a-zA-Z\d\/#&.:=?%@~_]+)*)?\u0007)|(?:(?:\d{1,4}(?:[;:]\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g, "");
+}
+
+export function parsePaneDimensions(output: string): PaneDimensions | null {
+  const match = stripAnsi(output).match(/\b(\d{1,4})x(\d{1,4})\b/);
+  if (!match) return null;
+
+  const cols = Number(match[1]);
+  const rows = Number(match[2]);
+  if (cols < 1 || cols > 1_000 || rows < 1 || rows > 1_000) return null;
+  return { cols, rows };
+}
+
+async function runMawPanes(
+  args: string[],
+  env?: Record<string, string | undefined>,
+): Promise<PaneDimensions | null> {
+  const process = Bun.spawn(["maw", "panes", ...args], {
+    env,
+    stdout: "pipe",
+    stderr: "ignore",
+  });
+  const [stdout, exitCode] = await Promise.all([
+    new Response(process.stdout).text(),
+    process.exited,
+  ]);
+  return exitCode === 0 ? parsePaneDimensions(stdout) : null;
+}
+
+async function paneDimensions(target: string): Promise<PaneDimensions | null> {
+  // Census-backed terminal tiles use globally addressable %pane IDs. Passing
+  // that ID through TMUX_PANE keeps this query on maw's read-only `panes`
+  // surface while allowing older maw builds that lack `maw panes <target>`.
+  if (target.startsWith("%")) {
+    const dimensions = await runMawPanes([], { ...process.env, TMUX_PANE: target });
+    if (dimensions) return dimensions;
+  }
+
+  return runMawPanes([target]);
 }
 
 export function redactPaneOutput(text: string): string {
@@ -704,9 +747,19 @@ function streamResponse(req: Request, url: URL): Response {
         return;
       }
 
-      void initialSnapshot(tail, lines).then((frame) => {
+      void Promise.all([
+        initialSnapshot(tail, lines),
+        paneDimensions(tail.target),
+      ]).then(([frame, dimensions]) => {
         if (subscriber.closed || tail.stopped) return;
         subscriber.ready = true;
+        if (dimensions) {
+          sendToSubscriber(tail, subscriber, encodeSseData(
+            JSON.stringify({ version: 1, ...dimensions }),
+            undefined,
+            "meta",
+          ));
+        }
         const snapshotId = tail.nextEventId - 1;
         sendToSubscriber(tail, subscriber, encodeSseData(frame, snapshotId, "snapshot"));
         // `maw tmux pipe` only observes bytes produced after attachment. Starting

@@ -5,6 +5,7 @@ import {
   captureTarget,
   encodeSseData,
   handleRequest,
+  parsePaneDimensions,
   redactPaneOutput,
   streamFrameDelta,
 } from "../server-demo";
@@ -50,6 +51,23 @@ test("SSE framing preserves multiline ANSI data as one event", () => {
 test("SSE snapshot framing carries a resumable sequence id", () => {
   const encoded = new TextDecoder().decode(encodeSseData("pane\n", 42, "snapshot"));
   expect(encoded).toBe("id: 42\nevent: snapshot\ndata: pane\ndata: \n\n");
+});
+
+test("maw pane dimensions produce backward-compatible SSE metadata", () => {
+  expect(parsePaneDimensions(
+    "  \u001b[90mTARGET SIZE COMMAND\u001b[0m\n  01-agora:1.0  109x40  zsh",
+  )).toEqual({ cols: 109, rows: 40 });
+  expect(parsePaneDimensions("pane unavailable")).toBeNull();
+  expect(parsePaneDimensions("bad 0x40 dimensions")).toBeNull();
+
+  const encoded = new TextDecoder().decode(encodeSseData(
+    JSON.stringify({ version: 1, cols: 109, rows: 40 }),
+    undefined,
+    "meta",
+  ));
+  expect(encoded).toBe(
+    'event: meta\ndata: {"version":1,"cols":109,"rows":40}\n\n',
+  );
 });
 
 test("peek fallback appends prefixes and redraws replaced screens", () => {

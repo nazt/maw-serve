@@ -4,6 +4,11 @@ import "@xterm/xterm/css/xterm.css";
 import { useEffect, useRef, useState } from "react";
 
 import { apiFetch, apiUrlWithParams, API_ENDPOINTS } from "../clients/api";
+import {
+  parseTerminalMeta,
+  terminalFontSize,
+  type TerminalSourceDimensions,
+} from "./terminalSizing";
 
 export interface TerminalTileItem {
   id: string;
@@ -117,8 +122,43 @@ export function TerminalTile({
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
   const [error, setError] = useState<string | null>(null);
   const [newLineCount, setNewLineCount] = useState(0);
+  const [selectMode, setSelectMode] = useState(false);
+  const [temporarySelect, setTemporarySelect] = useState(false);
   const hostRef = useRef<HTMLDivElement>(null);
+  const terminalRef = useRef<Terminal | null>(null);
   const resumeFollowRef = useRef<() => void>(() => {});
+  const selecting = selectMode || temporarySelect;
+
+  useEffect(() => {
+    const stopTemporarySelect = () => setTemporarySelect(false);
+    const startTemporarySelect = (event: KeyboardEvent) => {
+      if (event.key === "Alt") setTemporarySelect(true);
+    };
+    const stopOnAltRelease = (event: KeyboardEvent) => {
+      if (event.key === "Alt") stopTemporarySelect();
+    };
+    window.addEventListener("keydown", startTemporarySelect);
+    window.addEventListener("keyup", stopOnAltRelease);
+    window.addEventListener("pointercancel", stopTemporarySelect);
+    window.addEventListener("blur", stopTemporarySelect);
+    return () => {
+      window.removeEventListener("keydown", startTemporarySelect);
+      window.removeEventListener("keyup", stopOnAltRelease);
+      window.removeEventListener("pointercancel", stopTemporarySelect);
+      window.removeEventListener("blur", stopTemporarySelect);
+    };
+  }, []);
+
+  useEffect(() => {
+    const exitOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || (!selectMode && !temporarySelect)) return;
+      setSelectMode(false);
+      setTemporarySelect(false);
+      terminalRef.current?.clearSelection();
+    };
+    window.addEventListener("keydown", exitOnEscape);
+    return () => window.removeEventListener("keydown", exitOnEscape);
+  }, [selectMode, temporarySelect]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -135,6 +175,7 @@ export function TerminalTile({
     let following = true;
     let pausedSnapshot: string | null = null;
     let pendingWrites: Array<{ data: string; reset: boolean }> = [];
+    let sourceDimensions: TerminalSourceDimensions | null = null;
 
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
     const terminal = new Terminal({
@@ -151,6 +192,7 @@ export function TerminalTile({
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
     terminal.open(host);
+    terminalRef.current = terminal;
 
     const flushWrites = () => {
       writeFrame = null;
@@ -219,11 +261,25 @@ export function TerminalTile({
       }
     });
 
-    const fit = () => {
+    const resizeTerminal = () => {
       if (disposed || host.clientWidth === 0 || host.clientHeight === 0) return;
       const shouldFollow = following;
       try {
-        fitAddon.fit();
+        if (sourceDimensions) {
+          const fontSize = terminalFontSize(host.clientWidth, sourceDimensions.cols);
+          host.dataset.sourceCols = String(sourceDimensions.cols);
+          host.dataset.sourceRows = String(sourceDimensions.rows);
+          host.dataset.terminalFontSize = String(fontSize);
+          if (terminal.options.fontSize !== fontSize) terminal.options.fontSize = fontSize;
+          if (
+            terminal.cols !== sourceDimensions.cols ||
+            terminal.rows !== sourceDimensions.rows
+          ) {
+            terminal.resize(sourceDimensions.cols, sourceDimensions.rows);
+          }
+        } else {
+          fitAddon.fit();
+        }
         if (shouldFollow) {
           window.requestAnimationFrame(() => {
             if (!disposed) terminal.scrollToBottom();
@@ -233,8 +289,8 @@ export function TerminalTile({
         // A resize can race the tile being removed from the canvas.
       }
     };
-    const fitFrame = window.requestAnimationFrame(fit);
-    const resizeObserver = new ResizeObserver(fit);
+    const fitFrame = window.requestAnimationFrame(resizeTerminal);
+    const resizeObserver = new ResizeObserver(resizeTerminal);
     resizeObserver.observe(host);
 
     const onMotionPreference = () => {
@@ -303,6 +359,12 @@ export function TerminalTile({
       eventSource.addEventListener("snapshot", (event) => {
         receiveFrame(event as MessageEvent<string>, true);
       });
+      eventSource.addEventListener("meta", (event) => {
+        const dimensions = parseTerminalMeta((event as MessageEvent<string>).data);
+        if (!dimensions) return;
+        sourceDimensions = dimensions;
+        resizeTerminal();
+      });
       eventSource.onmessage = (event) => receiveFrame(event, false);
       eventSource.onerror = () => {
         if (disposed || pollingStarted) return;
@@ -325,12 +387,18 @@ export function TerminalTile({
       scrollDisposable.dispose();
       reducedMotion.removeEventListener("change", onMotionPreference);
       resumeFollowRef.current = () => {};
+      if (terminalRef.current === terminal) terminalRef.current = null;
       terminal.dispose();
     };
   }, [item.data.session, item.data.window, pollIntervalMs]);
 
   return (
-    <section className="flex h-full flex-col overflow-hidden rounded-md bg-[oklch(0.115_0.018_220)] shadow-[0_0_0_1px_var(--line)]">
+    <section
+      className={`flex h-full flex-col overflow-hidden rounded-md bg-[oklch(0.115_0.018_220)] shadow-[0_0_0_1px_var(--line)] ${
+        selectMode ? "ring-1 ring-inset ring-[var(--idle)]" : ""
+      }`}
+      data-terminal-select-mode={selectMode ? "select" : "view"}
+    >
       <header className="flex h-9 shrink-0 items-center gap-2 border-b border-[var(--line)] bg-[oklch(0.17_0.02_220)] px-2.5 font-mono">
         <span className={`h-1.5 w-1.5 rounded-full ${statusDot(status)}`} aria-hidden="true" />
         <strong className="min-w-0 flex-1 truncate text-xs text-[var(--ink)]">
@@ -339,6 +407,27 @@ export function TerminalTile({
         <span className="max-w-[45%] truncate text-[10px] text-[var(--ink-dim)]">
           {item.data.session}:{item.data.window}
         </span>
+        <button
+          type="button"
+          className={`grid h-6 w-6 shrink-0 place-items-center rounded border text-sm leading-none transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--idle)] ${
+            selectMode
+              ? "border-[var(--idle)] bg-[var(--surface-2)] text-[var(--ink)]"
+              : "border-transparent text-[var(--ink-dim)] hover:bg-[var(--surface-2)] hover:text-[var(--ink)]"
+          }`}
+          aria-label="select text"
+          aria-pressed={selectMode}
+          title="select text"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={() => {
+            setTemporarySelect(false);
+            setSelectMode((current) => {
+              if (current) terminalRef.current?.clearSelection();
+              return !current;
+            });
+          }}
+        >
+          <span aria-hidden="true">⌶</span>
+        </button>
         <button
           type="button"
           className="grid h-6 w-6 shrink-0 place-items-center rounded text-base leading-none text-[var(--ink-dim)] transition-colors duration-150 hover:bg-[var(--surface-2)] hover:text-[var(--ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--idle)]"
@@ -354,14 +443,31 @@ export function TerminalTile({
         className="relative min-h-0 flex-1 overflow-hidden p-2"
         role="region"
         aria-label={`${item.data.oracle} live terminal`}
-        onPointerDown={(event) => event.stopPropagation()}
-        onWheel={(event) => event.stopPropagation()}
+        onPointerDown={(event) => {
+          if (selecting || event.altKey) event.stopPropagation();
+        }}
+        onWheel={(event) => {
+          event.stopPropagation();
+          if (selecting) return;
+          const direction = Math.sign(event.deltaY);
+          if (direction === 0) return;
+          const lines = Math.max(1, Math.round(Math.abs(event.deltaY) / 30));
+          terminalRef.current?.scrollLines(direction * lines);
+        }}
       >
         <div ref={hostRef} className="terminal-tile__viewport h-full" />
+        {!selecting ? (
+          <div
+            className="absolute inset-2 z-10 cursor-grab touch-none"
+            data-terminal-drag-surface="true"
+            aria-hidden="true"
+            onPointerDown={() => terminalRef.current?.clearSelection()}
+          />
+        ) : null}
         {newLineCount > 0 ? (
           <button
             type="button"
-            className="absolute bottom-2 right-3 rounded-full bg-[var(--idle)] px-2 py-1 font-mono text-[9px] font-bold text-[var(--ink-inverse)] shadow-[0_0_0_1px_var(--bg)] transition-colors duration-150 hover:bg-[var(--active)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--ink)]"
+            className="absolute bottom-2 right-3 z-20 rounded-full bg-[var(--idle)] px-2 py-1 font-mono text-[9px] font-bold text-[var(--ink-inverse)] shadow-[0_0_0_1px_var(--bg)] transition-colors duration-150 hover:bg-[var(--active)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--ink)]"
             onPointerDown={(event) => event.stopPropagation()}
             onClick={resumeFollowRef.current}
           >
