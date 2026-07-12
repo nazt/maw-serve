@@ -11,6 +11,11 @@ import {
 } from "../web/src/mirror/model";
 import { decodeSpacesFrame } from "../web/src/mirror/useMirror";
 import { normalizeOracleHandle } from "../web/src/fleet/useFleet";
+import {
+  terminalPaneKey,
+  terminalTarget,
+  terminalTargets,
+} from "../web/src/mirror/terminalTarget";
 
 const KNOWN_PRIVATE_TITLE = "(3) Facebook - Comet - Nat";
 
@@ -91,4 +96,25 @@ test("Argus pulse parsing filters probes and applies freshness windows", () => {
 test("Argus human oracle names join display-census slugs", () => {
   expect(normalizeOracleHandle("wispr flow oracle")).toBe("wispr-flow");
   expect(normalizeOracleHandle("display-census-oracle")).toBe("display-census");
+});
+
+test("terminal targets prefer active panes, then least idle, without changing identity", () => {
+  const census = {
+    displays: [{
+      spaces: [{
+        oracles: [
+          { oracle: "Agora Oracle", session: "s", pane: "old", status: "active", idleSec: 12 },
+          { oracle: "agora", session: "s", pane: "idle", status: "idle", idleSec: 0 },
+          { oracle: "agora", session: "s", pane: "live", status: "active", idleSec: 0 },
+        ],
+      }],
+    }],
+  };
+
+  expect(terminalTargets(census, "agora").map((row) => row.pane)).toEqual([
+    "live",
+    "old",
+    "idle",
+  ]);
+  expect(terminalPaneKey(terminalTarget(census, "Agora Oracle")!)).toBe("s:live");
 });
