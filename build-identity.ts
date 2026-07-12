@@ -15,16 +15,20 @@ export interface ResolveBuildIdentityOptions {
   now?: Date;
 }
 
-function git(cwd: string, args: string[]): string | null {
+function gitOutput(cwd: string, args: string[]): string | null {
   try {
     return execFileSync("git", args, {
       cwd,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
-    }).trim() || null;
+    }).trim();
   } catch {
     return null;
   }
+}
+
+function git(cwd: string, args: string[]): string | null {
+  return gitOutput(cwd, args) || null;
 }
 
 export function resolveBuildIdentity({
@@ -39,9 +43,12 @@ export function resolveBuildIdentity({
     return { branch: "dev", commit: "dev", builder, buildTime: "dev" };
   }
 
+  const commit = git(resolvedCwd, ["rev-parse", "--short", "HEAD"]) ?? "unknown";
+  const status = gitOutput(resolvedCwd, ["status", "--porcelain=v1", "--untracked-files=normal"]);
+
   return {
     branch: git(resolvedCwd, ["rev-parse", "--abbrev-ref", "HEAD"]) ?? "unknown",
-    commit: git(resolvedCwd, ["rev-parse", "--short", "HEAD"]) ?? "unknown",
+    commit: commit !== "unknown" && status ? `${commit}+dirty` : commit,
     builder,
     buildTime: now.toISOString(),
   };

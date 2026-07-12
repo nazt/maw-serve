@@ -33,10 +33,6 @@ const compactNumber = new Intl.NumberFormat(undefined, {
   maximumFractionDigits: 1,
 });
 
-function shortCommit(commit: string): string {
-  return commit.slice(0, 8);
-}
-
 export function summarizeFleet(items: FleetTileItem[], usage: UsagePayload | null): FleetSummary {
   const summary: FleetSummary = {
     active: 0,
@@ -104,7 +100,7 @@ export function StatusBar({
     return () => controller.abort();
   }, []);
 
-  const buildBadge = `build ${__STOA_BUILD__.branch}@${shortCommit(__STOA_BUILD__.commit)}`;
+  const buildBadge = `build ${__STOA_BUILD__.branch}@${__STOA_BUILD__.commit}`;
   const label = error
     ? "Fleet telemetry link interrupted"
     : `Fleet status: ${summary.active} active, ${summary.idle} idle, ${summary.stale} stale, ${summary.burnPerHour} tokens per hour, ${summary.accounts} accounts`;
