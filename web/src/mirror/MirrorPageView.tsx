@@ -301,8 +301,8 @@ export default function MirrorPageView({
     { id: "reset", label: "Reset layout", onSelect: reset },
     {
       id: "toggle-theme",
-      label: `Switch to ${theme === "dark" ? "light" : "dark"}`,
-      hint: theme === "dark" ? "☀︎" : "☾",
+      label: `Use ${theme === "plain" ? "phosphor" : "plain"} mode`,
+      hint: theme === "plain" ? "phosphor" : "plain",
       separatorBefore: true,
       onSelect: onToggleTheme,
     },
