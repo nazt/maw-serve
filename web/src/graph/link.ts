@@ -1,5 +1,5 @@
 import { apiFetch } from "../clients/api";
-import type { NodeEdge } from "./edges";
+import { nodeEdgePairId, type NodeEdge } from "./edges";
 
 export type NodeLinkAction = "connect" | "disconnect";
 
@@ -43,6 +43,7 @@ interface PendingLinkAction {
 }
 
 export interface NodeLinkActionQueue {
+  remember(edge: NodeEdge, action: NodeLinkAction): void;
   enqueue(edge: NodeEdge, action: NodeLinkAction): void;
   flush(): void;
 }
@@ -53,29 +54,45 @@ export function createNodeLinkActionQueue(
   onError: (error: Error) => void = () => {},
 ): NodeLinkActionQueue {
   const pending = new Map<string, PendingLinkAction>();
+  const lastDispatched = new Map<string, NodeLinkAction>();
 
   const dispatch = (item: Omit<PendingLinkAction, "timer">) => {
+    // Record before awaiting the request. React re-renders, reconnect effects, and
+    // repeated pointer completion must not issue the same pair action in flight.
+    lastDispatched.set(
+      nodeEdgePairId(item.edge.from, item.edge.to),
+      item.action,
+    );
     void send(item.edge, item.action).catch((cause) => {
       onError(cause instanceof Error ? cause : new Error("Link request failed"));
     });
   };
 
+  const remember = (edge: NodeEdge, action: NodeLinkAction) => {
+    // Rehydrated edges describe existing board state. Seed the guard without
+    // dispatching so reload and transport reconnects can only redraw them.
+    lastDispatched.set(nodeEdgePairId(edge.from, edge.to), action);
+  };
+
   const enqueue = (edge: NodeEdge, action: NodeLinkAction) => {
-    const existing = pending.get(edge.id);
+    const pairId = nodeEdgePairId(edge.from, edge.to);
+    const existing = pending.get(pairId);
     if (existing) {
       clearTimeout(existing.timer);
-      pending.delete(edge.id);
+      pending.delete(pairId);
       // A connect immediately undone (or a disconnect immediately restored)
       // never changed server state, so the opposing pair can collapse to no-op.
       if (existing.action !== action) return;
     }
 
+    if (lastDispatched.get(pairId) === action) return;
+
     const item = { edge, action };
     const timer = setTimeout(() => {
-      pending.delete(edge.id);
+      pending.delete(pairId);
       dispatch(item);
     }, Math.max(0, delayMs));
-    pending.set(edge.id, { ...item, timer });
+    pending.set(pairId, { ...item, timer });
   };
 
   const flush = () => {
@@ -86,5 +103,5 @@ export function createNodeLinkActionQueue(
     pending.clear();
   };
 
-  return { enqueue, flush };
+  return { remember, enqueue, flush };
 }

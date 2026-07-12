@@ -108,6 +108,55 @@ test("link action queue debounces duplicates and collapses an immediate undo", a
   expect(calls).toEqual([]);
 });
 
+test("link action queue never re-sends a remembered or dispatched pair action", async () => {
+  const calls: Array<{ edge: NodeEdge; action: NodeLinkAction }> = [];
+  const send = async (edge: NodeEdge, action: NodeLinkAction) => {
+    calls.push({ edge, action });
+  };
+  const edge = makeNodeEdge("alpha", "beta");
+  if (!edge) throw new Error("fixture edge was invalid");
+
+  const rehydratedQueue = createNodeLinkActionQueue(send, 0);
+  rehydratedQueue.remember(edge, "connect");
+  rehydratedQueue.enqueue(
+    { id: "a-different-id", from: edge.to, to: edge.from },
+    "connect",
+  );
+  rehydratedQueue.enqueue(edge, "connect");
+  await Bun.sleep(5);
+  expect(calls).toEqual([]);
+
+  const liveQueue = createNodeLinkActionQueue(send, 0);
+  liveQueue.enqueue(edge, "connect");
+  await Bun.sleep(5);
+  liveQueue.enqueue(edge, "connect");
+  await Bun.sleep(5);
+  expect(calls).toEqual([{ edge, action: "connect" }]);
+});
+
+test("link action queue permits a genuine disconnect and later reconnect", async () => {
+  const calls: Array<{ edge: NodeEdge; action: NodeLinkAction }> = [];
+  const send = async (edge: NodeEdge, action: NodeLinkAction) => {
+    calls.push({ edge, action });
+  };
+  const edge = makeNodeEdge("alpha", "beta");
+  if (!edge) throw new Error("fixture edge was invalid");
+  const queue = createNodeLinkActionQueue(send, 0);
+
+  queue.enqueue(edge, "connect");
+  await Bun.sleep(5);
+  queue.enqueue(edge, "disconnect");
+  await Bun.sleep(5);
+  queue.enqueue(edge, "connect");
+  await Bun.sleep(5);
+
+  expect(calls).toEqual([
+    { edge, action: "connect" },
+    { edge, action: "disconnect" },
+    { edge, action: "connect" },
+  ]);
+});
+
 test("edge curves retain endpoints and expose stable label and delete anchors", () => {
   const curve = edgeCurve({ x: 10, y: 20 }, { x: 210, y: 120 }, "alpha-beta");
   expect(curve.path.startsWith("M 10 20 Q ")).toBeTrue();

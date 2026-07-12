@@ -31,6 +31,9 @@ export function useNodeEdges(pageId: string): NodeEdgesController {
     queueRef.current = createNodeLinkActionQueue(undefined, undefined, (cause) => {
       if (mountedRef.current) setError(cause.message);
     });
+    for (const edge of edgesRef.current) {
+      queueRef.current.remember(edge, "connect");
+    }
   }
 
   useEffect(() => {
