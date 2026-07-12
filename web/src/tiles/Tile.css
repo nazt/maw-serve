@@ -1,0 +1,62 @@
+.tile-resize-handle {
+  right: var(--tile-resize-offset);
+  bottom: var(--tile-resize-offset);
+  width: var(--tile-resize-hit);
+  height: var(--tile-resize-hit);
+}
+
+.tile-resize-handle__glyph {
+  position: absolute;
+  right: 50%;
+  bottom: 50%;
+  width: var(--tile-resize-glyph);
+  height: var(--tile-resize-glyph);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(
+    var(--tile-resize-glyph-nudge),
+    var(--tile-resize-glyph-nudge)
+  );
+  transition: opacity 140ms var(--ease-out-expo);
+}
+
+.tile-resize-handle__glyph::before,
+.tile-resize-handle__glyph::after {
+  position: absolute;
+  right: 0;
+  bottom: var(--tile-resize-glyph-nudge);
+  width: var(--tile-resize-line);
+  height: var(--tile-resize-stroke);
+  background: oklch(var(--idle-channels) / 0.72);
+  content: "";
+  transform: rotate(-45deg);
+  transform-origin: center;
+}
+
+.tile-resize-handle__glyph::after {
+  bottom: 0;
+}
+
+.tile.image .resize-handle.tile-resize-handle::before,
+.tile.image .resize-handle.tile-resize-handle::after {
+  content: none;
+}
+
+.tile:hover .tile-resize-handle__glyph,
+.tile:focus-within .tile-resize-handle__glyph,
+.tile.is-resizing .tile-resize-handle__glyph,
+.tile.image .tile-resize-handle__glyph {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .tile-resize-handle__glyph {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tile-resize-handle__glyph {
+    transition: none;
+  }
+}
