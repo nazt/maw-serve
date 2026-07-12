@@ -4,6 +4,7 @@ import "@xterm/xterm/css/xterm.css";
 import { useEffect, useRef, useState } from "react";
 
 import { apiFetch, apiUrlWithParams, API_ENDPOINTS } from "../clients/api";
+import type { Theme } from "../theme";
 import {
   parseTerminalMeta,
   terminalFontSize,
@@ -28,6 +29,7 @@ export interface TerminalTileItem {
 export interface TerminalTileProps {
   item: TerminalTileItem;
   onClose: (id: string) => void;
+  theme: Theme;
   pollIntervalMs?: number;
 }
 
@@ -80,16 +82,16 @@ function fleetTerminalTheme(): ITheme {
     background: "#00000000",
     foreground: color("var(--ink-dim)", "#b8b8b8"),
     cursor: color("var(--active)", "#75d99a"),
-    cursorAccent: color("var(--bg)", "#122126"),
+    cursorAccent: color("var(--terminal-surface)", "#122126"),
     selectionBackground: color("oklch(var(--idle-channels) / 0.24)", "#39705d99"),
-    black: color("var(--bg)", "#122126"),
+    black: color("var(--terminal-ansi-black)", "#122126"),
     red: color("var(--error)", "#e26b68"),
     green: color("var(--active)", "#75d99a"),
     yellow: color("var(--pinned)", "#dab96d"),
     blue: color("var(--idle)", "#78b7cc"),
     magenta: color("oklch(0.72 0.13 315)", "#bd92ca"),
     cyan: color("oklch(0.79 0.11 195)", "#75ced0"),
-    white: color("var(--ink-dim)", "#b8b8b8"),
+    white: color("var(--terminal-ansi-white)", "#b8b8b8"),
     brightBlack: color("var(--stale)", "#60737a"),
     brightRed: color("oklch(0.78 0.17 25)", "#ff8b86"),
     brightGreen: color("oklch(0.91 0.15 155)", "#9af0b6"),
@@ -97,7 +99,7 @@ function fleetTerminalTheme(): ITheme {
     brightBlue: color("oklch(0.86 0.1 210)", "#9ed7e8"),
     brightMagenta: color("oklch(0.82 0.12 315)", "#d7afe2"),
     brightCyan: color("oklch(0.88 0.1 195)", "#9ce8e8"),
-    brightWhite: color("var(--ink)", "#f4f4f4"),
+    brightWhite: color("var(--terminal-ansi-bright-white)", "#f4f4f4"),
   };
   probe.remove();
   return theme;
@@ -117,6 +119,7 @@ function statusDot(status: ConnectionStatus): string {
 export function TerminalTile({
   item,
   onClose,
+  theme,
   pollIntervalMs = 2_000,
 }: TerminalTileProps) {
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
@@ -189,6 +192,7 @@ export function TerminalTile({
       scrollback: 4_000,
       theme: fleetTerminalTheme(),
     });
+    terminalRef.current = terminal;
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
     terminal.open(host);
@@ -392,14 +396,18 @@ export function TerminalTile({
     };
   }, [item.data.session, item.data.window, pollIntervalMs]);
 
+  useEffect(() => {
+    if (terminalRef.current) terminalRef.current.options.theme = fleetTerminalTheme();
+  }, [theme]);
+
   return (
     <section
-      className={`flex h-full flex-col overflow-hidden rounded-md bg-[oklch(0.115_0.018_220)] shadow-[0_0_0_1px_var(--line)] ${
+      className={`flex h-full flex-col overflow-hidden rounded-md bg-[var(--terminal-surface)] shadow-[0_0_0_1px_var(--line)] ${
         selectMode ? "ring-1 ring-inset ring-[var(--idle)]" : ""
       }`}
       data-terminal-select-mode={selectMode ? "select" : "view"}
     >
-      <header className="flex h-9 shrink-0 items-center gap-2 border-b border-[var(--line)] bg-[oklch(0.17_0.02_220)] px-2.5 font-mono">
+      <header className="flex h-9 shrink-0 items-center gap-2 border-b border-[var(--line)] bg-[var(--terminal-header)] px-2.5 font-mono">
         <span className={`h-1.5 w-1.5 rounded-full ${statusDot(status)}`} aria-hidden="true" />
         <strong className="min-w-0 flex-1 truncate text-xs text-[var(--ink)]">
           {item.data.oracle}

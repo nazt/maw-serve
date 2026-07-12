@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -10,6 +11,7 @@ export interface CanvasMenuAction {
   id: string;
   label: string;
   hint?: string;
+  separatorBefore?: boolean;
   disabled?: boolean;
   onSelect: () => void | Promise<void>;
 }
@@ -111,24 +113,28 @@ export function CanvasContextMenu({
       onKeyDown={onKeyDown}
     >
       {actions.map((action) => (
-        <button
-          key={action.id}
-          type="button"
-          role="menuitem"
-          disabled={action.disabled}
-          className="flex min-h-8 w-full items-center justify-between gap-6 rounded px-2.5 py-1.5 text-left transition-colors duration-100 hover:bg-[var(--line)] focus-visible:bg-[var(--line)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--idle)] disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none"
-          onClick={() => {
-            onClose();
-            void action.onSelect();
-          }}
-        >
-          <span>{action.label}</span>
-          {action.hint ? (
-            <span className="text-[10px] text-[var(--ink-dim)]" aria-hidden="true">
-              {action.hint}
-            </span>
+        <Fragment key={action.id}>
+          {action.separatorBefore ? (
+            <div className="my-1 h-px bg-[var(--line)]" role="separator" />
           ) : null}
-        </button>
+          <button
+            type="button"
+            role="menuitem"
+            disabled={action.disabled}
+            className="flex min-h-8 w-full items-center justify-between gap-6 rounded px-2.5 py-1.5 text-left transition-colors duration-100 hover:bg-[var(--line)] focus-visible:bg-[var(--line)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--idle)] disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none"
+            onClick={() => {
+              onClose();
+              void action.onSelect();
+            }}
+          >
+            <span>{action.label}</span>
+            {action.hint ? (
+              <span className="text-[10px] text-[var(--ink-dim)]" aria-hidden="true">
+                {action.hint}
+              </span>
+            ) : null}
+          </button>
+        </Fragment>
       ))}
     </div>
   );

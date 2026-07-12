@@ -8,6 +8,7 @@ import CanvasContextMenu, { type CanvasMenuAction } from "../canvas/ContextMenu"
 import { Fabric } from "../canvas/Fabric";
 import { useCanvas } from "../canvas/useCanvas";
 import StatusBar from "../fleet/StatusBar";
+import type { Theme } from "../theme";
 import {
   normalizeOracleHandle,
   useFleet,
@@ -37,6 +38,8 @@ interface MirrorPageViewProps {
   onCreatePage: () => void;
   onRenamePage: (pageId: string, name: string) => void;
   onDeletePage: (pageId: string) => void;
+  theme: Theme;
+  onToggleTheme: () => void;
 }
 
 type MenuState = { x: number; y: number; id: string | null };
@@ -88,6 +91,8 @@ export default function MirrorPageView({
   onCreatePage,
   onRenamePage,
   onDeletePage,
+  theme,
+  onToggleTheme,
 }: MirrorPageViewProps) {
   const spaces = useMemo(
     () => report.spaces.filter((space) => space.display === display.index)
@@ -294,7 +299,14 @@ export default function MirrorPageView({
     { id: "fit", label: "Fit all", hint: "⇧1", onSelect: () => canvas.fit(allItems) },
     { id: "zoom", label: "100%", hint: "0", onSelect: () => canvas.zoomTo(1) },
     { id: "reset", label: "Reset layout", onSelect: reset },
-  ], [allItems, canvas, menu, raise, reset, sendBack, terminalTiles]);
+    {
+      id: "toggle-theme",
+      label: `Switch to ${theme === "dark" ? "light" : "dark"}`,
+      hint: theme === "dark" ? "☀︎" : "☾",
+      separatorBefore: true,
+      onSelect: onToggleTheme,
+    },
+  ], [allItems, canvas, menu, onToggleTheme, raise, reset, sendBack, terminalTiles, theme]);
 
   return (
     <div className="h-dvh w-screen overflow-hidden bg-[var(--bg)] text-[var(--ink)]" data-page-id={pageId} data-mirror-connection={connection}>
@@ -336,7 +348,7 @@ export default function MirrorPageView({
             minWidth={item.kind === "space" ? 220 : undefined}
             minHeight={item.kind === "space" ? 170 : undefined}
             style={{ zIndex: item.zIndex }}
-            className={`${item.kind === "terminal" ? "bg-[oklch(0.115_0.018_220)]" : ""} ${
+            className={`${item.kind === "terminal" ? "bg-[var(--terminal-surface)]" : ""} ${
               selectedId === item.id
                 ? "rounded-md ring-2 ring-[var(--idle)] ring-offset-2 ring-offset-[var(--bg)]"
                 : "rounded-md"
@@ -359,6 +371,7 @@ export default function MirrorPageView({
             ) : (
               <TerminalTile
                 item={item}
+                theme={theme}
                 onClose={(id) => setTerminalTiles((current) => current.filter((tile) => tile.id !== id))}
               />
             )}
@@ -382,7 +395,13 @@ export default function MirrorPageView({
         <CanvasContextMenu x={menu.x} y={menu.y} label={menu.id ? "Space tile actions" : "Mirror canvas actions"} actions={menuActions} onClose={() => setMenu(null)} />
       ) : null}
 
-      <StatusBar items={fleetTiles} usage={usage} error={fleetError} />
+      <StatusBar
+        items={fleetTiles}
+        usage={usage}
+        error={fleetError}
+        theme={theme}
+        onToggleTheme={onToggleTheme}
+      />
     </div>
   );
 }

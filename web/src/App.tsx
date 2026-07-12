@@ -55,6 +55,8 @@ import TerminalTile, {
 } from "./board/TerminalTile";
 import OracleTileContent from "./fleet/OracleTileContent";
 import StatusBar, { summarizeFleet } from "./fleet/StatusBar";
+import type { Theme } from "./theme";
+import { useTheme } from "./useTheme";
 import {
   normalizeOracleHandle,
   summarizeAttention,
@@ -196,7 +198,7 @@ interface NoteTileContentProps {
 
 function NoteTileContent({ item, onChange }: NoteTileContentProps) {
   return (
-    <div className="h-full rounded-md border border-[var(--pinned)] bg-[oklch(0.29_0.055_75)] p-2.5 shadow-[0_0_8px_var(--pinned-glow)]">
+    <div className="h-full rounded-md border border-[var(--pinned)] bg-[var(--note-surface)] p-2.5 shadow-[0_0_8px_var(--pinned-glow)]">
       <textarea
         className="h-full w-full resize-none border-0 bg-transparent font-mono text-sm leading-relaxed text-[var(--ink)] outline-none placeholder:text-[var(--ink-faint)]"
         aria-label="Board note"
@@ -519,7 +521,7 @@ function ImageDropGhost({ style }: ImageDropGhostProps) {
 
 function tileClassName(item: AppTileItem): string {
   if (item.kind === "note") {
-    return "rounded-md bg-[oklch(0.29_0.055_75)]";
+    return "rounded-md bg-[var(--note-surface)]";
   }
 
   if (item.kind === "image") {
@@ -527,7 +529,7 @@ function tileClassName(item: AppTileItem): string {
   }
 
   if (item.kind === "terminal") {
-    return "rounded-md bg-[oklch(0.115_0.018_220)]";
+    return "rounded-md bg-[var(--terminal-surface)]";
   }
 
   return [
@@ -601,6 +603,8 @@ interface BoardPageViewProps {
   onRenamePage: (pageId: string, name: string) => void;
   onDeletePage: (pageId: string) => void;
   oracleDisplayPages: ReadonlyMap<string, string>;
+  theme: Theme;
+  onToggleTheme: () => void;
 }
 
 function BoardPageView({
@@ -611,6 +615,8 @@ function BoardPageView({
   onRenamePage,
   onDeletePage,
   oracleDisplayPages,
+  theme,
+  onToggleTheme,
 }: BoardPageViewProps) {
   const [restoredState] = useState(() => loadBoardState(pageId));
   const [restoredItems] = useState(() => normalizeUserItemZ(restoredState.items));
@@ -1202,6 +1208,13 @@ function BoardPageView({
           label: "Reset layout",
           onSelect: resetLayout,
         },
+        {
+          id: "toggle-theme",
+          label: `Switch to ${theme === "dark" ? "light" : "dark"}`,
+          hint: theme === "dark" ? "☀︎" : "☾",
+          separatorBefore: true,
+          onSelect: onToggleTheme,
+        },
       ];
     }
 
@@ -1262,10 +1275,12 @@ function BoardPageView({
     fitAll,
     fitSelection,
     openTerminal,
+    onToggleTheme,
     raiseUserItem,
     resetLayout,
     selectedTile,
     sendToBack,
+    theme,
   ]);
 
   return (
@@ -1472,7 +1487,7 @@ function BoardPageView({
                   ) : null}
                 </div>
               ) : item.kind === "terminal" ? (
-                <TerminalTile item={item} onClose={closeTerminal} />
+                <TerminalTile item={item} onClose={closeTerminal} theme={theme} />
               ) : (
                 <BoardItemContent
                   item={item}
@@ -1556,7 +1571,13 @@ function BoardPageView({
           {persistenceWarning}
         </p>
       ) : null}
-      <StatusBar items={statusTiles} usage={usage} error={error} />
+      <StatusBar
+        items={statusTiles}
+        usage={usage}
+        error={error}
+        theme={theme}
+        onToggleTheme={onToggleTheme}
+      />
 
       <output className="sr-only" aria-live="polite">
         {totals.active + totals.idle + totals.stale} fleet tiles
@@ -1566,6 +1587,7 @@ function BoardPageView({
 }
 
 export default function App() {
+  const { theme, toggleTheme } = useTheme();
   const [manualPages, setManualPages] = useState(loadBoardPages);
   const mirror = useMirrorReport();
   const pulse = useOraclePulse();
@@ -1697,6 +1719,8 @@ export default function App() {
         onCreatePage={createPage}
         onRenamePage={renamePage}
         onDeletePage={deletePage}
+        theme={theme}
+        onToggleTheme={toggleTheme}
       />
     );
   }
@@ -1711,6 +1735,8 @@ export default function App() {
       onRenamePage={renamePage}
       onDeletePage={deletePage}
       oracleDisplayPages={oracleDisplayPages}
+      theme={theme}
+      onToggleTheme={toggleTheme}
     />
   );
 }
