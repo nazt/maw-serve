@@ -145,6 +145,32 @@ test("an already-live unordered pair does not resend connect notifications", asy
   expect(commands).toHaveLength(2);
 });
 
+test("abandoned live-pair state expires and permits a later notification", async () => {
+  const limiter = new BoardLinkRateLimiter(60_000, 0, 10, 1_000);
+  let now = 0;
+  let sends = 0;
+  const dependencies = {
+    census: async () => census("alpha", "beta"),
+    limiter,
+    logger: quietLogger,
+    now: () => now,
+    sendHey: async () => { sends += 1; },
+  };
+
+  const connect = () => handleRequest(
+    linkRequest({ from: "alpha", to: "beta", action: "connect" }),
+    localServer,
+    dependencies,
+  );
+  expect((await connect()).status).toBe(200);
+  now = 999;
+  expect(await (await connect()).json()).toEqual({ ok: true, sent: [] });
+  now = 2_000;
+  expect((await connect()).status).toBe(200);
+
+  expect(sends).toBe(4);
+});
+
 test("disconnect clears a live pair so a later connect notifies again", async () => {
   const limiter = new BoardLinkRateLimiter();
   let now = 10_000;
