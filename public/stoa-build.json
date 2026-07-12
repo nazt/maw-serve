@@ -1,6 +1,6 @@
 {
-  "branch": "agents/stoa-images",
-  "commit": "2b723de",
-  "builder": "stoa-shell",
-  "buildTime": "2026-07-12T03:14:56.409Z"
+  "branch": "agents/stoa-term-fit",
+  "commit": "1561059",
+  "builder": "stoa-term-fit",
+  "buildTime": "2026-07-12T07:27:13.700Z"
 }
