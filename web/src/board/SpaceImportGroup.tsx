@@ -1,11 +1,45 @@
 import type { SpaceImportBoardItem } from "./boardItems";
 
+const GROUP_HEADER_HEIGHT = 40;
+
 interface SpaceImportGroupProps {
   item: SpaceImportBoardItem;
   liveCount: number;
   pollCount: number;
   onToggle: (id: string) => void;
   onRemove: (id: string) => void;
+}
+
+function SpaceMiniMap({ item }: { item: SpaceImportBoardItem }) {
+  const contentHeight = Math.max(1, item.expandedSize.h - GROUP_HEADER_HEIGHT);
+
+  return (
+    <svg
+      className="h-7 w-14 shrink-0 rounded-[3px] border border-[oklch(var(--line-channels)/0.82)] bg-[var(--surface)] p-0.5"
+      viewBox={`0 0 ${item.expandedSize.w} ${contentHeight}`}
+      preserveAspectRatio="xMidYMid meet"
+      aria-hidden="true"
+      data-space-group-thumbnail={item.groupId}
+    >
+      {item.members.map((member) => (
+        <rect
+          key={member.id}
+          x={member.geometry.x}
+          y={Math.max(0, member.geometry.y - GROUP_HEADER_HEIGHT)}
+          width={Math.max(1, member.geometry.w)}
+          height={Math.max(1, member.geometry.h)}
+          rx="4"
+          fill={member.kind === "terminal"
+            ? "oklch(var(--idle-channels) / 0.2)"
+            : "oklch(var(--surface-2-channels) / 0.72)"}
+          stroke={member.kind === "terminal" ? "var(--idle)" : "var(--line)"}
+          strokeWidth="3"
+          vectorEffect="non-scaling-stroke"
+          data-space-thumbnail-window={member.windowId}
+        />
+      ))}
+    </svg>
+  );
 }
 
 export default function SpaceImportGroup({
@@ -35,11 +69,19 @@ export default function SpaceImportGroup({
         >
           {item.collapsed ? "▸" : "▾"}
         </button>
+        {item.collapsed ? <SpaceMiniMap item={item} /> : null}
         <strong className="min-w-0 flex-1 truncate">
-          space {item.spaceRef.spaceIndex}
+          {item.collapsed
+            ? `space ${item.spaceRef.spaceIndex} · ${item.members.length}`
+            : `space ${item.spaceRef.spaceIndex}`}
         </strong>
-        <span className="shrink-0 text-[10px] tabular-nums text-[var(--ink-dim)]">
-          {liveCount} live / {pollCount} poll
+        <span
+          className="shrink-0 rounded border border-[oklch(var(--line-channels)/0.72)] bg-[oklch(var(--surface-channels)/0.66)] px-1.5 py-0.5 text-[10px] tabular-nums text-[var(--ink-dim)]"
+          aria-label={`${liveCount} live terminals, ${pollCount} polled terminals`}
+          data-live-count={liveCount}
+          data-polled-count={pollCount}
+        >
+          {liveCount} live / {pollCount} polled
         </span>
         <button
           type="button"
@@ -76,4 +118,3 @@ export default function SpaceImportGroup({
     </section>
   );
 }
-
