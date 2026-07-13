@@ -166,7 +166,38 @@ For frontend features, architecture, and development notes, see
 [web/README.md](./web/README.md). For upstream inspiration and license details, see
 [ATTRIBUTION.md](./ATTRIBUTION.md).
 
+## Installing as a maw plugin (`maw agora`) — status: registers, does not run yet
+
+`plugin.json` already declares the CLI surface:
+
+```json
+"cli": { "command": "agora", "aliases": ["board"] }
+```
+
+`maw plugin install <path-to-this-repo>` **does** register the plugin — `maw plugin ls` and
+`maw plugin info maw-serve` both resolve it, and `maw agora --help` / `maw board --help` print
+usage correctly. Tested and confirmed working (2026-07-13).
+
+**Running it does not work yet.** `maw agora` (no `--help`) currently fails:
+
+```
+$ maw agora
+failed to read wasm: No such file or directory (os error 2)
+```
+
+`maw plugin info` shows `kind: wasm` with `entry: -` — the daemon expects a compiled WASM
+handler for the `cli` surface, and this plugin doesn't have one; it only declares an
+`engine.serve` block (the Bun/`server-demo.ts` process), which is a separate mounting path that
+`engine.serve` v2 needs to wire up before `maw agora` can actually launch the board. Until then,
+use the [Quickstart](#quickstart) above — it runs correctly on its own and does not depend on
+the plugin CLI entry at all.
+
+If you install the plugin to test the registration step yourself, remember to
+`maw plugin remove maw-serve --yes` afterward (archives, does not delete) since it won't do
+anything useful yet.
+
 ## Roadmap
 
-Install Stoa as a maw plugin (`maw agora`) once `engine.serve` v2 mounts external plugins—then
-no manual clone will be needed.
+Build the plugin's WASM/JS `cli` entry point (or wait for `engine.serve` v2 to mount external
+plugins directly) so `maw agora` actually launches the board — then no manual clone or install
+step will be needed at all.
