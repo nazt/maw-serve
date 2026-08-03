@@ -17,7 +17,12 @@ export interface HostResolutionInput {
   savedHost: string | null;
 }
 
-function normalizeHost(value: string | null | undefined): string {
+export interface ExplicitHostResolutionInput {
+  hasUrlHost: boolean;
+  urlHost: string | null;
+}
+
+export function normalizeHost(value: string | null | undefined): string {
   const raw = String(value ?? "").trim();
   if (!raw) return "";
 
@@ -28,6 +33,15 @@ function normalizeHost(value: string | null | undefined): string {
   } catch {
     return "";
   }
+}
+
+function browserPeopleHostInput(): ExplicitHostResolutionInput {
+  if (typeof window === "undefined") return { hasUrlHost: false, urlHost: null };
+  const params = new URLSearchParams(window.location.search);
+  return {
+    hasUrlHost: params.has("peopleHost"),
+    urlHost: params.get("peopleHost"),
+  };
 }
 
 function browserResolutionInput(): HostResolutionInput {
@@ -54,9 +68,16 @@ export function resolveHost(input: HostResolutionInput = browserResolutionInput(
   return normalizeHost(selected);
 }
 
+export function resolvePeopleHost(input: ExplicitHostResolutionInput = browserPeopleHostInput()): string {
+  if (!input.hasUrlHost) return "";
+  const host = normalizeHost(input.urlHost);
+  return privateNetworkAddressSpace(host) === "loopback" ? host : "";
+}
+
 const resolutionInput = browserResolutionInput();
 
 export const activeHost = resolveHost(resolutionInput);
+export const activePeopleHost = resolvePeopleHost();
 export const hostSource: HostSource = resolutionInput.hasUrlHost
   ? "url"
   : resolutionInput.savedHost
@@ -122,6 +143,19 @@ export function apiFetch(path: string, init: RequestInit = {}): Promise<Response
   const finalInit: PrivateNetworkRequestInit = { ...init };
   const addressSpace = privateNetworkAddressSpace(url);
   if (activeHost && addressSpace) finalInit.targetAddressSpace = addressSpace;
+  return fetch(url, finalInit);
+}
+
+export function peopleApiUrl(path: string, host = activePeopleHost): string {
+  if (!host) return path;
+  return new URL(path, `${host}/`).toString();
+}
+
+export function peopleApiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const url = peopleApiUrl(path);
+  const finalInit: PrivateNetworkRequestInit = { ...init };
+  const addressSpace = privateNetworkAddressSpace(url);
+  if (activePeopleHost && addressSpace) finalInit.targetAddressSpace = addressSpace;
   return fetch(url, finalInit);
 }
 
