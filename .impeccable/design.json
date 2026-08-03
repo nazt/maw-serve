@@ -170,7 +170,7 @@
         "value": "48rem"
       },
       {
-        "name": "overlay-inspector",
+        "name": "single-column-inspector",
         "value": "58rem"
       },
       {
@@ -284,6 +284,11 @@
         "name": "The Full-Perimeter Rule",
         "body": "Operational state owns the complete boundary; never reduce it to a fashionable side stripe.",
         "section": "shapes"
+      },
+      {
+        "name": "The One Scroll Rule",
+        "body": "One page owns one vertical scrollbar. Stages, ledgers, inspectors, and cards reflow or expand instead of becoming nested vertical viewports.",
+        "section": "layout"
       },
       {
         "name": "The Person Is Not a Row Rule",

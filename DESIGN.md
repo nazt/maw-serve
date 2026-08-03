@@ -196,7 +196,9 @@ Stoa fills the viewport and treats the canvas or stage as the primary world. She
 
 Use a compact rhythm built from quarter-rem steps, then create hierarchy with deliberate jumps to `1.5rem`, `2rem`, and fluid gaps. Dense metadata may sit close to its title; separate trust statements, world controls, the stage, and the evidence inspector with clear bands and full-width hairlines.
 
-Responsive changes are structural, not merely smaller. Multi-column controls stack, stage density drops, and secondary inspectors become a single elevated overlay when a split view would make names or evidence illegible. Horizontally scroll only the world that genuinely needs spatial width; do not force the page shell itself to overflow.
+Responsive changes are structural, not merely smaller. Multi-column controls stack, stage density drops, and secondary inspectors move into the document flow when a split view would make names or evidence illegible. Every content-led page has one vertical scroll owner: the page itself. Stages, room ledgers, inspectors, and cards expand with their content instead of nesting vertical scrollbars. Spatial content must reflow before horizontal scrolling is considered; never force the page shell itself to overflow.
+
+**The One Scroll Rule.** One page owns one vertical scrollbar. A panel may clip decoration, but it never becomes a second vertical viewport; use responsive reflow, expansion, pagination, or explicit disclosure instead.
 
 ## Elevation & Depth
 
@@ -257,7 +259,7 @@ Borders are one pixel and normally wrap the full component. Dashed borders indic
 
 The reusable people-world signature begins with a locked local trust contract, then opens into full-name plates plus explicit time-window controls. A stage may show the top 24 loaded observations by recent activity, but search still reports the loaded match count; never imply that activity is a relationship score. Plates use depth and a full boundary to express recency, while candidate identity remains dashed and labeled.
 
-Selection opens a bounded inspector without destroying the stage. Browser Back, Escape, and a visible close control all reverse that selection. At wide sizes the inspector occupies a constrained companion column (`24rem`–`30rem`); below the established overlay breakpoint (`58rem`) it becomes a fixed panel so the name stage remains legible. Conversation excerpts stay behind a separate, explicit evidence action even after local read access has been granted.
+Selection opens a bounded inspector without destroying the stage. Browser Back, Escape, and a visible close control all reverse that selection. At wide sizes the inspector occupies a constrained companion column (`24rem`–`30rem`); below the single-column breakpoint (`58rem`) it moves above the stage in normal document flow. The page remains the only vertical scroll owner at every breakpoint. Conversation excerpts stay behind a separate, explicit evidence action even after local read access has been granted.
 
 **The Person Is Not a Row Rule.** Lead a people view with full-name plates on a spatial character stage; reserve tables for room ledgers and secondary evidence.
 

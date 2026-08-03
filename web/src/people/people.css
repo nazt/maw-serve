@@ -2,9 +2,11 @@
   --people-accent: var(--active);
   --people-candidate: var(--pinned);
   --people-panel: color-mix(in oklch, var(--surface) 88%, var(--bg));
-  min-height: 100%;
+  min-height: 100dvh;
   height: 100%;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
   padding-bottom: 2rem;
   background:
     radial-gradient(circle at 68% 8%, oklch(var(--active-channels) / 0.08), transparent 32rem),
@@ -380,6 +382,7 @@
   display: grid;
   min-height: 43rem;
   grid-template-columns: minmax(0, 1fr);
+  align-items: start;
   gap: 1rem;
   padding-top: 1rem;
   transition: grid-template-columns 260ms var(--ease-out-expo);
@@ -402,6 +405,7 @@
   display: grid;
   grid-template-rows: auto 1fr;
   overflow: hidden;
+  container: people-stage / inline-size;
 }
 
 .people-stage-heading {
@@ -429,9 +433,8 @@
 
 .people-world-stage {
   position: relative;
-  height: 42rem;
   min-height: 38rem;
-  overflow: auto;
+  overflow: hidden;
   perspective: 900px;
   background:
     radial-gradient(ellipse at 50% 92%, oklch(var(--active-channels) / 0.12), transparent 44%),
@@ -484,9 +487,9 @@
   position: relative;
   z-index: 2;
   display: grid;
-  min-width: 46rem;
+  min-width: 0;
   min-height: 38rem;
-  grid-template-columns: repeat(4, minmax(9rem, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   align-content: center;
   gap: 0.9rem;
   padding: 5rem 6%;
@@ -549,7 +552,7 @@
 }
 
 .people-room-ledger {
-  overflow: auto;
+  min-width: 0;
 }
 
 .people-room-ledger-head,
@@ -586,6 +589,31 @@
   font-size: 0.68rem;
 }
 
+@container people-stage (max-width: 50rem) {
+  .people-nameplate-field {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@container people-stage (max-width: 38rem) {
+  .people-nameplate-field {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .people-room-ledger-head {
+    display: none;
+  }
+
+  .people-room-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.45rem 1rem;
+  }
+
+  .people-room-row time {
+    grid-column: 1 / -1;
+  }
+}
+
 .people-empty-row {
   padding: 4rem 1rem;
   color: var(--ink-faint);
@@ -594,8 +622,8 @@
 
 .people-inspector {
   display: grid;
-  max-height: calc(100vh - 7rem);
-  grid-template-rows: auto 1fr;
+  align-self: start;
+  grid-template-rows: auto auto;
   overflow: hidden;
 }
 
@@ -659,7 +687,6 @@
 }
 
 .people-inspector-scroll {
-  overflow: auto;
   padding: 1rem;
 }
 
@@ -984,11 +1011,13 @@
   }
 
   .people-inspector {
-    position: fixed;
-    z-index: 50;
-    inset: 4.75rem 0.75rem 0.75rem;
-    max-height: none;
+    position: static;
+    grid-row: 1;
     background: var(--surface);
+  }
+
+  .people-workspace.has-inspector .people-stage-panel {
+    grid-row: 2;
   }
 }
 
