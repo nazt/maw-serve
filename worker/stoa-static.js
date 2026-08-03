@@ -6,6 +6,7 @@ const DATA_PATHS = new Set([
   `${BASE_PATH}/stream`,
   `${BASE_PATH}/version`,
 ]);
+const PEOPLE_PATHS = new Set(["/people", "/people/", `${BASE_PATH}/people`, `${BASE_PATH}/people/`]);
 
 function assetRequest(request, pathname) {
   const url = new URL(request.url);
@@ -20,6 +21,10 @@ export default {
     if (url.pathname === "/") {
       url.pathname = `${BASE_PATH}/`;
       return Response.redirect(url, 302);
+    }
+
+    if (PEOPLE_PATHS.has(url.pathname)) {
+      return env.ASSETS.fetch(assetRequest(request, "/"));
     }
 
     if (DATA_PATHS.has(url.pathname)) {

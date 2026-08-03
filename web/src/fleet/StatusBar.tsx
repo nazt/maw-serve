@@ -12,6 +12,8 @@ export interface StatusBarProps {
   theme: Theme;
   onToggleTheme: () => void;
   className?: string;
+  statusText?: string;
+  showFleetMetrics?: boolean;
 }
 
 export interface FleetSummary {
@@ -80,6 +82,8 @@ export function StatusBar({
   theme,
   onToggleTheme,
   className = "",
+  statusText = "",
+  showFleetMetrics = true,
 }: StatusBarProps) {
   const summary = summarizeFleet(items, usage);
   const [serverBuild, setServerBuild] = useState<ServerBuildIdentity | null>(null);
@@ -103,11 +107,13 @@ export function StatusBar({
   }, []);
 
   const buildBadge = `build ${__STOA_BUILD__.branch}@${__STOA_BUILD__.commit}`;
-  const label = error
-    ? "Fleet telemetry link interrupted"
-    : usageError
-      ? `Fleet status: ${summary.active} active, ${summary.idle} idle, ${summary.stale} stale; usage rates unavailable`
-    : `Fleet status: ${summary.active} active, ${summary.idle} idle, ${summary.stale} stale, ${summary.burnPerHour} tokens per hour, ${summary.accounts} accounts`;
+  const label = !showFleetMetrics && statusText
+    ? statusText
+    : error
+      ? "Fleet telemetry link interrupted"
+      : usageError
+        ? `Fleet status: ${summary.active} active, ${summary.idle} idle, ${summary.stale} stale; usage rates unavailable`
+        : `Fleet status: ${summary.active} active, ${summary.idle} idle, ${summary.stale} stale, ${summary.burnPerHour} tokens per hour, ${summary.accounts} accounts`;
   const nextTheme = theme === "plain" ? "phosphor" : "plain";
 
   return (
@@ -117,7 +123,11 @@ export function StatusBar({
       aria-live="polite"
     >
       <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden sm:gap-4">
-        {error ? (
+        {!showFleetMetrics ? (
+          <span className="truncate font-mono text-[11px] text-[var(--ink-dim)]">
+            {statusText}
+          </span>
+        ) : error ? (
           <span className="truncate font-mono text-xs text-[var(--ink)]">
             telemetry interrupted · retrying
           </span>

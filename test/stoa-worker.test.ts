@@ -44,6 +44,18 @@ test("Cloudflare rewrites the Vite base path to public assets", async () => {
   expect(mock.paths).toEqual(["/", "/assets/app.js"]);
 });
 
+test("Cloudflare serves /people as static SPA without fetching either localhost host", async () => {
+  const mock = assets();
+  const paths = ["/people", "/people/", "/api/agora/people", "/api/agora/people/"];
+  const responses = await Promise.all(paths.map((path) => worker.fetch(
+    new Request(`https://stoa.example.com${path}?host=http://localhost:3456&peopleHost=http://localhost:47911`),
+    { ASSETS: mock.binding },
+  )));
+
+  expect(responses.every((response) => response.status === 200)).toBeTrue();
+  expect(mock.paths).toEqual(["/", "/", "/", "/"]);
+});
+
 test("Cloudflare never impersonates a local data endpoint", async () => {
   const mock = assets();
   const response = await worker.fetch(
