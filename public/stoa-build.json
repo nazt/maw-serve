@@ -1,6 +1,6 @@
 {
-  "branch": "agents/stoa-tile-fixes",
-  "commit": "9107c2f",
-  "builder": "stoa-server",
-  "buildTime": "2026-07-12T15:17:03.154Z"
+  "branch": "feat/people-read-surface",
+  "commit": "96e2adc",
+  "builder": "maw-serve",
+  "buildTime": "2026-08-03T02:52:51.137Z"
 }
