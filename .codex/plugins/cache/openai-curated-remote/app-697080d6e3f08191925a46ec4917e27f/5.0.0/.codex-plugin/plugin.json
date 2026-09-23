@@ -1,0 +1,25 @@
+{
+  "apps": "./.app.json",
+  "author": {
+    "name": "Shopee Singapore Private Limited"
+  },
+  "description": "With the Shopee app, you can easily turn shopping ideas into focused product searches and discover relevant deals. By describing what you need in natural language, you’ll receive personalized recommendations and a concise selection of relevant products. You can then explore more options, compare deals, and complete your purchase seamlessly on Shopee.",
+  "interface": {
+    "capabilities": [],
+    "category": "Other",
+    "defaultPrompt": [
+      "Could you help me find a good portable juicer that I can keep on my desk?",
+      "Can you recommend loose-fitting pants to go with a black hooded puffer?"
+    ],
+    "developerName": "Shopee Singapore Private Limited",
+    "displayName": "Shopee",
+    "longDescription": "With the Shopee app, you can easily turn shopping ideas into focused product searches and discover relevant deals. By describing what you need in natural language, you’ll receive personalized recommendations and a concise selection of relevant products. You can then explore more options, compare deals, and complete your purchase seamlessly on Shopee.",
+    "privacyPolicyURL": "https://mcp.shopee.com/openai/v1/location/privacy",
+    "shortDescription": "Find deals and products",
+    "supportURL": "https://mcp.shopee.com/openai/v1/location/support",
+    "termsOfServiceURL": "https://mcp.shopee.com/openai/v1/location/tos",
+    "websiteURL": "https://mcp.shopee.com/openai/v1/location/home"
+  },
+  "name": "app-697080d6e3f08191925a46ec4917e27f",
+  "version": "5.0.0"
+}
